@@ -1,0 +1,592 @@
+/*
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
+
+        https://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+*/
+
+syntax = "proto3";
+import "google/protobuf/any.proto";
+import "SerializableExpression.proto";
+import "SerializableSchema.proto";
+import "JavaUdfDescriptorMessage.proto";
+package NES;
+
+option java_package = "stream.nebula.protobuf";
+option java_multiple_files = true;
+
+/**
+The serializable wrapper for the nes partition object
+ */
+message NesPartition {
+  uint64 queryId = 1;
+  uint64 operatorId = 2;
+  uint64 partitionId = 3;
+  uint64 subpartitionId = 4;
+}
+
+/**
+The serializable wrapper for the node location object
+ */
+message NodeLocation {
+  uint64 nodeId = 1;
+  string hostname = 2;
+  uint32 port = 3;
+}
+
+/**
+The serializable wrapper for the source config object
+ */
+message SerializablePhysicalSourceType{
+  string sourceType = 1;
+  enum InputFormat{
+      JSON = 0;
+      CSV = 1;
+  };
+
+  enum TCPDecideMessageSize{
+      TUPLE_SEPARATOR = 0;
+      USER_SPECIFIED_BUFFER_SIZE = 1;
+      BUFFER_SIZE_FROM_SOCKET = 2;
+  }
+
+  /**
+  The serializable wrapper for the sense source config object
+  */
+  message SerializableSenseSourceType{
+    string udsf = 1;
+  }
+
+  /**
+  The serializable wrapper for the binary source config object
+  */
+  message SerializableBinarySourceType{
+    string filePath = 1;
+  }
+
+  /**
+  The serializable wrapper for the csv source config object
+  */
+  message SerializableCSVSourceType{
+    string filePath = 1;
+    bool skipHeader = 2;
+    string delimiter = 3;
+    uint32 numberOfBuffersToProduce = 4;
+    uint32 numberOfTuplesToProducePerBuffer = 5;
+    uint32 sourceGatheringInterval = 6;
+  }
+
+  /**
+  The serializable wrapper for the mqtt source config object
+  */
+  message SerializableMQTTSourceType{
+    string url = 1;
+    string clientId = 2;
+    string userName = 3;
+    string topic = 4;
+    uint32 qos = 5;
+    bool cleanSession = 6;
+    float flushIntervalMS = 7;
+    InputFormat inputFormat = 8;
+  }
+
+    /**
+    The serializable wrapper for the mqtt source config object
+    */
+    message SerializableTCPSourceType{
+      string socketHost = 1;
+      uint32 socketPort = 2;
+      uint32 socketDomain = 3;
+      uint32 socketType = 4;
+      float flushIntervalMS = 6;
+      InputFormat inputFormat = 7;
+      TCPDecideMessageSize tcpDecideMessageSize = 8;
+      string tupleSeparator = 9;
+      uint32 socketBufferSize = 10;
+      uint32 bytesUsedForSocketBufferSizeTransfer = 11;
+
+    }
+
+  /**
+  The serializable wrapper for the kafka source config object
+  */
+  message SerializableKafkaSourceType{
+    string brokers = 1;
+    uint32 autoCommit = 2;
+    string groupId = 3;
+    string topic = 4;
+    uint32 connectionTimeout = 5;
+  }
+
+  /**
+  The serializable wrapper for the opc source config object
+  */
+  message SerializableOPCSourceType{
+    uint32 namespaceIndex = 1;
+    string nodeIdentifier = 2;
+    string userName = 3;
+    string password = 4;
+  }
+
+  /**
+  The serializable wrapper for the materialized view source config object
+  */
+  message SerializableMaterializedViewSourceType{
+    uint32 id = 1;
+  }
+
+  /**
+  The serializable wrapper for the materialized view source config object
+  */
+  message SerializableMonitoringSourceType {
+    uint64 metricCollectorType = 1;
+    uint64 waitTime = 2;
+  }
+
+  google.protobuf.Any specificPhysicalSourceType = 2;
+}
+
+/*
+The serializable wrapper definition for operator nodes
+ */
+message SerializableOperator{
+
+  /**
+  Source Details contains properties for the source operator, such as the source descriptor
+   */
+  message SourceDetails {
+    message SerializableBinarySourceDescriptor {
+      string filePath = 1;
+      SerializableSchema sourceSchema = 2;
+    }
+
+    message SerializableCsvSourceDescriptor {
+      SerializablePhysicalSourceType physicalSourceType = 1;
+      SerializableSchema sourceSchema = 2;
+    }
+
+    message SerializableDefaultSourceDescriptor {
+      uint64 numBuffersToProcess = 1;
+      uint64 sourceGatheringInterval = 2;
+      SerializableSchema sourceSchema = 3;
+    }
+
+    message SerializableKafkaSourceDescriptor {
+      string brokers = 1;
+      string topic = 2;
+      string groupId = 3;
+      bool autoCommit = 4;
+      uint64 kafkaConnectTimeout = 5;
+      SerializableSchema sourceSchema = 6;
+    }
+
+    message SerializableLogicalSourceDescriptor {
+      string logicalSourceName = 1;
+      string physicalSourceName = 2;
+      optional SerializableSchema sourceSchema = 3;
+    }
+
+    message SerializableSenseSourceDescriptor {
+      string udfs = 1;
+      SerializableSchema sourceSchema = 2;
+    }
+
+    message SerializableZMQSourceDescriptor {
+      string host = 1;
+      uint32 port = 2;
+      SerializableSchema sourceSchema = 3;
+    }
+
+    message SerializableOPCSourceDescriptor {
+      string url = 1;
+      uint32 namespaceIndex = 2;
+      string identifier = 3;
+      uint32 identifierType = 4;
+      string user = 5;
+      string password = 6;
+      SerializableSchema sourceSchema = 7;
+    }
+
+    message SerializableMQTTSourceDescriptor {
+      SerializablePhysicalSourceType physicalSourceType = 1;
+      SerializableSchema sourceSchema = 2;
+    }
+
+    message SerializableTCPSourceDescriptor {
+      SerializablePhysicalSourceType physicalSourceType = 1;
+      SerializableSchema sourceSchema = 2;
+    }
+
+    message SerializableNetworkSourceDescriptor {
+      SerializableSchema sourceSchema = 1;
+      NesPartition nesPartition = 2;
+      NodeLocation nodeLocation = 3;
+      uint64 waitTime = 4;
+      uint32 retryTimes = 5;
+    }
+
+    message SerializableMaterializedViewSourceDescriptor {
+      uint64 id = 1;
+    }
+
+    message SerializableMonitoringSourceDescriptor {
+      uint64 metricCollectorType = 1;
+      uint64 waitTime = 2;
+    }
+
+    google.protobuf.Any sourceDescriptor = 1;
+    uint64 sourceOriginId = 2;
+  }
+
+  /**
+  Sink Details contains properties for the sink operator, such as the sink descriptor
+  */
+  message SinkDetails {
+    message SerializableFileSinkDescriptor {
+      string filePath = 1;
+      bool append = 2;
+      string sinkFormat = 3;
+    }
+
+    message SerializableKafkaSinkDescriptor {
+      string topic = 1;
+      string brokers = 2;
+      uint64 kafkaConnectTimeout = 5;
+    }
+
+    message SerializablePrintSinkDescriptor {
+    }
+
+    message SerializableMonitoringSinkDescriptor {
+      uint64 collectorType = 1;
+    }
+
+    message SerializableNullOutputSinkDescriptor {
+    }
+
+    message SerializableZMQSinkDescriptor {
+      string host = 1;
+      uint32 port = 2;
+      bool isInternal = 3;
+    }
+
+    message SerializableOPCSinkDescriptor {
+      string url = 1;
+      uint32 namespaceIndex = 2;
+      string identifier = 3;
+      uint32 identifierType = 4;
+      string user = 5;
+      string password = 6;
+    }
+
+    message SerializableMQTTSinkDescriptor {
+      enum TimeUnits{
+        nanoseconds = 0;
+        milliseconds = 1;
+        seconds = 2;
+      };
+      enum ServiceQualities{
+        atMostOnce = 0;
+        atLeastOnce = 1;
+        exactlyOnce = 2;
+      };
+      string address = 1;
+      string clientId = 2;
+      string topic = 3;
+      string user = 4;
+      uint64 maxBufferedMSGs = 5;
+      TimeUnits timeUnit = 6;
+      uint64 msgDelay = 7;
+      ServiceQualities qualityOfService = 8;
+      bool asynchronousClient = 9;
+    }
+
+    message SerializableNetworkSinkDescriptor {
+      NodeLocation nodeLocation = 1;
+      NesPartition nesPartition = 2;
+      uint64 waitTime = 3;
+      uint32 retryTimes = 4;
+      uint64 uniqueNetworkSinkDescriptorId = 5;
+    }
+
+    message SerializableMaterializedViewSinkDescriptor {
+      uint64 viewId = 1;
+    }
+
+    google.protobuf.Any sinkDescriptor = 1;
+    uint64 faultToleranceMode = 2;
+    uint64 numberOfOriginIds = 3;
+  }
+
+  /**
+    WatermarkAssignerDetail contains properties for the watermark assigner, such as watermark field and delay for
+    event time watermark
+   */
+  message WatermarkStrategyDetails {
+    message SerializableEventTimeWatermarkStrategyDescriptor {
+      SerializableExpression onField = 1;
+      uint64 allowedLateness = 2;
+      uint64 multiplier = 3;
+    }
+
+    message SerializableIngestionTimeWatermarkStrategyDescriptor {
+    }
+    google.protobuf.Any strategy = 1;
+  }
+
+  /**
+   Map Details contains properties for the map operator, such as the field assignment expression
+   */
+  message MapDetails {
+    SerializableExpression expression = 1;
+  }
+
+  /**
+   CEPIteration Details contains properties for the CEPIteration operator, such as the field assignment minIteration and maxIteration
+   */
+  message CEPIterationDetails {
+    uint64 minIteration = 1;
+    uint64 maxIteration = 2;
+  }
+
+  /**
+  Projection Details contains properties for the projection operator, i.e., the output schema
+  */
+  message ProjectionDetails {
+    repeated SerializableExpression expression = 1;
+
+  }
+  /**
+   Union Details contains properties for the union operator, which is empty currently.
+   */
+  message UnionDetails {}
+
+  /**
+   Broadcast details contains properties for the broadcast operator
+   */
+  message BroadcastDetails{}
+
+  /**
+   Filter Details contains properties for the filter operator, such as the filter predicate expression
+   */
+  message FilterDetails {
+    SerializableExpression predicate = 1;
+    float selectivity = 2;
+  }
+
+  /**
+  Rename details contain the new name of the source.
+   */
+  message RenameDetails {
+    string newSourceName = 1;
+  }
+
+  /**
+ InferModelDetails contains the model file for the inference
+ */
+  message InferModelDetails {
+    repeated SerializableExpression inputFields = 1;
+    repeated SerializableExpression outputFields = 2;
+    string mlFileName = 3;
+    bytes mlFileContent = 4;
+  }
+
+  /**
+    Window Details contains properties for the window operator
+  */
+  message WindowDetails {
+
+    message DistributionCharacteristic {
+      enum Distribution{
+        // `Unset' indicates that the logical operator has just been deserialized from a client.
+        // The deserialization logic in the coordinator will change it to `Complete' to be inline with the creation
+        // logic in `Query::window' and `Query::windowByKey'.
+        // TODO This logic should be revisited when #2884 is fixed.
+        Unset = 0;
+        Complete = 1;
+        Slicing = 2;
+        Combining = 3;
+        Merging = 4;
+      }
+      Distribution distr = 1;
+    }
+
+    message TimeCharacteristic {
+      enum Type{
+        EventTime = 0;
+        IngestionTime = 1;
+      }
+      Type type = 1;
+      string field = 2;
+      uint64 multiplier = 3;
+    }
+    message TumblingWindow {
+      TimeCharacteristic timeCharacteristic = 1;
+      uint32 size = 2;
+    }
+    message SlidingWindow {
+      TimeCharacteristic timeCharacteristic = 1;
+      uint32 size = 2;
+      uint32 slide = 3;
+    }
+
+    message ThresholdWindow {
+      SerializableExpression predicate = 1;
+      uint32 minimumCount = 2;
+    }
+
+    message Aggregation {
+      enum Type{
+        SUM = 0;
+        MAX = 1;
+        MIN = 2;
+        COUNT = 3;
+        AVG = 4;
+        MEDIAN = 5;
+      }
+      Type type = 1;
+      SerializableExpression onField = 2;
+      SerializableExpression asField = 3;
+    }
+
+    message TriggerPolicy{
+      enum Type{
+        triggerOnTime = 0;
+        triggerOnRecord = 1;
+        triggerOnBuffer = 2;
+        triggerOnWatermarkChange = 3;
+      }
+      Type type = 1;
+      uint64 timeInMs = 2;
+    }
+
+    message TriggerAction
+    {
+      enum Type{
+        Complete = 0;
+        Slicing = 1;
+      }
+      Type type = 1;
+    }
+
+
+    google.protobuf.Any windowType = 1;
+    repeated Aggregation windowAggregations = 2;
+    DistributionCharacteristic distrChar = 3;
+    repeated SerializableExpression keys = 4;
+    TriggerPolicy triggerPolicy = 5;
+    TriggerAction action = 6;
+    uint64 allowedLateness = 7;
+    uint64 origin = 8;
+  }
+
+  /**
+    Join Details contains properties for the join operator
+  */
+  message JoinDetails {
+
+    message DistributionCharacteristic {
+      enum Distribution{
+        Complete = 0;
+        Slicing = 1;
+        Combining = 3;
+        Merging = 4;
+      }
+      Distribution distr = 1;
+    }
+
+    message TimeCharacteristic {
+      enum Type{
+        EventTime = 0;
+        IngestionTime = 1;
+      }
+      Type type = 1;
+      string field = 2;
+    }
+    message TumblingWindow {
+      TimeCharacteristic timeCharacteristic = 1;
+      uint32 size = 2;
+    }
+    message SlidingWindow {
+      TimeCharacteristic timeCharacteristic = 1;
+      uint32 size = 2;
+      uint32 slide = 3;
+    }
+
+    message TriggerPolicy{
+      enum Type{
+        triggerOnTime = 0;
+        triggerOnRecord = 1;
+        triggerOnBuffer = 2;
+        triggerOnWatermarkChange = 3;
+      }
+      Type type = 1;
+      uint64 timeInMs = 2;
+    }
+
+    message TriggerAction
+    {
+      enum Type{
+        LazyNestedLoop = 0;
+      }
+      Type type = 1;
+    }
+
+    message JoinTypeCharacteristic {
+      enum JoinType{
+        INNER_JOIN = 0;
+        CARTESIAN_PRODUCT = 1;
+      }
+      JoinType jointype = 1;
+    }
+
+    google.protobuf.Any windowType = 2;
+    DistributionCharacteristic distrChar = 3;
+    SerializableExpression onLeftKey = 4;
+    SerializableExpression onRightKey = 5;
+    SerializableExpression leftSourceType = 6;
+    SerializableExpression rightSourceType = 7;
+    TriggerPolicy triggerPolicy = 8;
+    TriggerAction action = 9;
+    uint64 numberOfInputEdgesLeft = 10;
+    uint64 numberOfInputEdgesRight = 11;
+    JoinTypeCharacteristic jointype = 12;
+  }
+
+  /**
+    Batch Join Details contains properties for the batch join operator
+  */
+  message BatchJoinDetails {
+    SerializableExpression onBuildKey = 1;
+    SerializableExpression onProbeKey = 2;
+    SerializableExpression buildSchema = 3;
+    SerializableExpression probeSchema = 4;
+    uint64 numberOfInputEdgesBuild = 5;
+    uint64 numberOfInputEdgesProbe = 6;
+  }
+
+  /**
+    Information to serialize a Map operator with a Java UDF.
+   */
+  message MapJavaUdfDetails {
+      JavaUdfDescriptorMessage javaUdfDescriptor = 1;
+  }
+
+  google.protobuf.Any details = 1;
+  repeated uint64 childrenIds = 2;
+  SerializableSchema inputSchema = 3;
+  SerializableSchema outputSchema = 4;
+  SerializableSchema leftInputSchema = 5;
+  SerializableSchema rightInputSchema = 6;
+  uint64 operatorId = 7;
+  repeated uint64 originIds = 8;
+  repeated uint64 leftOriginIds = 9;
+  repeated uint64 rightOriginIds = 10;
+}

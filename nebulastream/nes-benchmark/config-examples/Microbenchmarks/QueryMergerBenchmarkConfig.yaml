@@ -1,0 +1,20 @@
+#Location of query set
+# For each query set we will run the experiments
+querySetLocation: '<Path To Query-Set Folder>'
+
+# List of Query merging strategies in comma separated
+queryMergerRule: Z3SignatureBasedCompleteQueryMergerRule,SyntaxBasedCompleteQueryMergerRule,HybridCompleteQueryMergerRule,DefaultQueryMergerRule,HashSignatureBasedCompleteQueryMergerRule,ImprovedHashSignatureBasedCompleteQueryMergerRule
+#queryMergerRule: Z3SignatureBasedPartialQueryMergerRule,SyntaxBasedPartialQueryMergerRule,DefaultQueryMergerRule,HashSignatureBasedPartialQueryMergerRule,ImprovedHashSignatureBasedPartialQueryMergerRule,Z3SignatureBasedPartialQueryMergerBottomUpRule
+# Number of Physical sources
+noOfPhysicalSources: 1,1,1,1,1,1
+# Batch size for processing number of queries together
+batchSize: 1,1,1,1,1,1
+
+#benchmark internal parameter
+logLevel: LOG_NONE
+# Number of Distinct Logical sources
+numberOfDistinctSources: 10
+# Sleep interval between each run
+startupSleepIntervalInSeconds: 3
+# Number of times experiment is to be repeated
+numberOfMeasurementsToCollect: 3
