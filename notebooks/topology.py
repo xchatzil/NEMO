@@ -11,7 +11,7 @@ def get_lognorm_hist():
     stddev = 50
     sigma, scale = util.lognorm_params(mode, stddev)
     sample = lognorm.rvs(sigma, 0, scale, size=10000).astype(int)
-    H, bins = np.histogram(sample, bins=100, range=[0, 100], density=True)
+    H, bins = np.histogram(sample, bins=100, range=(0, 100), density=True)
     return H, bins
 
 
@@ -29,7 +29,7 @@ def setup_topology(H, max_resources, c_capacity=50, centers=40, x_dim_range=(0, 
     stds = np.random.uniform(low=0.5, high=5.3, size=(centers,))
     coords, y = make_blobs(n_samples=device_number, centers=centers, n_features=2, shuffle=True,
                            cluster_std=stds,
-                           center_box=[(x_dim_range[0], y_dim_range[0]), (x_dim_range[1], y_dim_range[1])],
+                           center_box=((x_dim_range[0], y_dim_range[0]), (x_dim_range[1], y_dim_range[1])),
                            random_state=31)
     c_coords = coords[0]
 

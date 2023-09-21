@@ -38,7 +38,7 @@ class LeachSolver:
         # assign the cluster heads
         cluster_head_cnt = 0
         for i in ch_indices:
-            distance = np.linalg.norm(ch_coords[cluster_head_cnt] - self.c_coords)
+            distance = int(np.linalg.norm(ch_coords[cluster_head_cnt] - self.c_coords))
             self.df_leach.loc[i, "role"] = 1
             self.df_leach.loc[i, "parent"] = -1
             self.df_leach.loc[i, "distance"] = distance
@@ -50,7 +50,7 @@ class LeachSolver:
             if self.df_leach.loc[i, "cluster"] == -1:
                 ch_label = closest_centroids_indices[i]
                 self.df_leach.loc[i, "cluster"] = ch_label
-                dist = np.linalg.norm(self.coords[i] - ch_coords[ch_label])
+                dist = int(np.linalg.norm(self.coords[i] - ch_coords[ch_label]))
                 self.df_leach.loc[i, "distance"] = dist
 
                 parent_idx = ch_indices[ch_label]
