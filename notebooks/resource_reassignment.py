@@ -105,27 +105,56 @@ def reassign_cluster_heads(df, slot_col):
     return df, new_paths_dict, agg_dict
 
 
-def get_cluster_heads(df, slot_col, agg_idx, av_slots, required_slots):
-    new_parent_indexes = []
-    cl_label = df.iloc[agg_idx]["cluster"]
-    # print("Overloded node idx:", agg_idx, " (", av_slots, "/", required_slots, ")")
+def get_cluster_heads(opt_idx, df, label="cluster", av_col_name="free_slots", req_col_name="weight",
+                      opt_col_name="latency", parent_col_name="parent", route_col_name="route"):
+    # Filter the DataFrame to get the group of elements with the same label
+    group_df = df[df[label] == df.at[opt_idx, label]]
 
-    if av_slots < required_slots:
-        df_grouped = df[df["cluster"] == cl_label].copy()
-        df_grouped["weighted"] = df_grouped[slot_col] / (required_slots * df_grouped["latency"])
+    # Initialize the result dictionary with the optimal index
+    ch_dict = {}
+    ch_routes = []
 
-        # calc cumsum over available sorted slots
-        df_sorted = df_grouped.sort_values(["weighted"], ascending=False)
-        df_sorted["cumsum"] = df_sorted[slot_col].cumsum()
+    # Sort the DataFrame by a specific column (e.g., column 'A')
+    sorted_df = group_df.sort_values(by=opt_col_name)
+    remaining_elements = list(zip(sorted_df.index, sorted_df[av_col_name], sorted_df[req_col_name]))
 
-        # print("Parent ", agg_idx, " is overloaded")
-        slot_index = df_sorted["cumsum"].values.searchsorted(required_slots)
-        for i in range(0, slot_index + 1):
-            new_parent_idx = df_sorted.index[i]
-            # add (idx, slots) to output
-            new_parent_indexes.append((new_parent_idx, df.iloc[new_parent_idx][slot_col]))
-    # print("New cluster heads: ", new_parent_indexes)
-    return new_parent_indexes
+    while len(remaining_elements) > 0:
+        min_idx, av_resources, nnr = remaining_elements[0]
+        max_idx, nna, required = remaining_elements[len(remaining_elements) - 1]
+
+        # print("Mapping", min_idx, "->", max_idx, "Resources: ", av_resources, required)
+
+        if max_idx in ch_dict:
+            remaining_elements.pop(len(remaining_elements) - 1)
+            break
+
+        if av_resources >= required:
+            if min_idx in ch_dict:
+                ch_dict[min_idx].append(max_idx)
+            else:
+                ch_dict[min_idx] = [max_idx]
+
+            # update values of the cluster head
+            new_available = av_resources - required
+            remaining_elements[0] = (min_idx, new_available, nnr)
+            df.at[min_idx, av_col_name] = new_available
+
+            # update routes of the added node
+            df.at[max_idx, parent_col_name] = min_idx
+            df.at[max_idx, route_col_name] = df.at[min_idx, route_col_name] + [min_idx]
+            ch_routes.append(df.at[max_idx, route_col_name])
+
+            # remove added node from the element list
+            remaining_elements.pop(len(remaining_elements) - 1)
+        else:
+            # not enough resources, either remove the first element if it is a cluster head,
+            # or put it to the end of the list to be assigned to a cluster head
+            if min_idx in ch_dict:
+                remaining_elements.pop(0)
+            else:
+                remaining_elements.append(remaining_elements.pop(0))
+
+    return df, ch_dict, ch_routes, remaining_elements
 
 
 def distribute_resources_and_evaluate(slot_columns, df, coords):

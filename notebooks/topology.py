@@ -4,6 +4,7 @@ import numpy.random as rd
 from sklearn.datasets import make_blobs
 import util
 from scipy.stats import lognorm
+import sys
 
 
 def get_lognorm_hist():
@@ -16,7 +17,7 @@ def get_lognorm_hist():
 
 
 def setup_topology(H, max_resources, c_capacity=50, centers=40, x_dim_range=(0, 100), y_dim_range=(-50, 50),
-                   size=1000, seed=4):
+                   size=1000, seed=4, weight=(1, 3)):
     np.random.seed(seed)
     device_number = size + 1  # first node is the coordinator
     types = ["coordinator", "worker"]
@@ -36,7 +37,11 @@ def setup_topology(H, max_resources, c_capacity=50, centers=40, x_dim_range=(0, 
     df = pd.DataFrame(coords, columns=["x", "y"])
     df['latency'] = list(zip(df.x, df.y))
     df['latency'] = df['latency'].apply(lambda x: np.linalg.norm(x - c_coords))
-    df["type"] = pd.Series(type_list, dtype="category")
+    df['type'] = pd.Series(type_list, dtype="category")
+    df['weight'] = np.random.randint(weight[0], weight[1], df.shape[0])
+    df.at[0, 'weight'] = 0
+    base_col = "base"
+    df[base_col] = sys.maxsize
 
     sums = []
     slot_columns = []
@@ -59,4 +64,4 @@ def setup_topology(H, max_resources, c_capacity=50, centers=40, x_dim_range=(0, 
             sums.append((df[col].sum()))
             slot_columns.append(col)
 
-    return df, coords, c_coords, slot_columns, sums
+    return df, coords, c_coords, base_col, slot_columns, sums
