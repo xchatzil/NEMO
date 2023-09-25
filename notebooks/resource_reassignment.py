@@ -1,4 +1,5 @@
 from util import replace, evaluate
+from scipy.spatial import cKDTree
 
 
 def reassign_cluster_heads(df, slot_col):
@@ -105,19 +106,28 @@ def reassign_cluster_heads(df, slot_col):
     return df, new_paths_dict, agg_dict
 
 
-def get_cluster_heads(opt_idx, df, label="cluster", av_col_name="free_slots", req_col_name="weight",
-                      opt_col_name="latency", parent_col_name="parent", route_col_name="route"):
+def get_cluster_heads(opt, df, cluster, weighting, cl_col="cluster", av_col_name="free_slots", req_col_name="weight",
+                      opt_col_name="latency", parent_col_name="parent", route_col_name="route", w=0.5):
     # Filter the DataFrame to get the group of elements with the same label
-    group_df = df[df[label] == df.at[opt_idx, label]]
+    group_df = df[df[cl_col] == cluster].copy()
+
+    if weighting in ["penalize"]:
+        total_required = group_df[req_col_name].sum()
+        group_df["norm"] = (w * group_df[av_col_name]) / (total_required * group_df[opt_col_name])
+        opt_col_name = "norm"
+        sorted_df = group_df.sort_values(by=opt_col_name, ascending=False)
+    elif weighting in ["spring", "centroid"]:
+        kdtree = cKDTree(group_df[['x', 'y']])
+        idx_order = kdtree.query([opt[0], opt[1]], k=group_df.shape[0])[1]
+        sorted_df = group_df.iloc[idx_order]
+    else:
+        raise Exception("Undefined weighting", weighting)
+
+    remaining_elements = list(zip(sorted_df.index, sorted_df[av_col_name], sorted_df[req_col_name]))
 
     # Initialize the result dictionary with the optimal index
     ch_dict = {}
     ch_routes = []
-
-    # Sort the DataFrame by a specific column (e.g., column 'A')
-    sorted_df = group_df.sort_values(by=opt_col_name)
-    remaining_elements = list(zip(sorted_df.index, sorted_df[av_col_name], sorted_df[req_col_name]))
-
     while len(remaining_elements) > 0:
         min_idx, av_resources, nnr = remaining_elements[0]
         max_idx, nna, required = remaining_elements[len(remaining_elements) - 1]
