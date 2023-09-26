@@ -14,6 +14,17 @@ centroid_label = Line2D([], [], color="grey", marker='o', linestyle='None', labe
 aggp_label = Line2D([], [], color=lcl, marker='x', linestyle='None', label='aggregation')
 
 
+def get_max_by_thresh(elements, threshold):
+    max_k = np.argmax(elements)
+    min_t = max(0, elements[max_k] - threshold)
+    print(min_t)
+    for i in range(len(elements) - 1, -1, -1):
+        if elements[i] >= min_t:
+            return i
+        i += i
+    return max_k
+
+
 def knn(root_coords, search_indexes, elements):
     nn_idx = np.nan
     nn_dist = sys.maxsize

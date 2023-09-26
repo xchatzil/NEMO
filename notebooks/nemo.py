@@ -8,12 +8,13 @@ from util import evaluate
 
 
 class NemoSolver:
-    def __init__(self, df_coords, coords, centroids, W, L, weighting):
+    def __init__(self, df_coords, coords, centroids, W, L, weighting, weight_col="weight"):
         self.df_nemo = df_coords.copy()
         self.coords = coords
         self.W = W
         self.L = L
         self.weighting = weighting
+        self.weight_col = weight_col
 
         self.device_number = len(df_coords.index)
         self.latency_hist = np.zeros(self.device_number)
@@ -77,7 +78,7 @@ class NemoSolver:
                 F = 0
                 for i in range(iterations):
                     # for each parent node (source) in the group
-                    F += +calc_F(self.centroids[cluster], S, k)
+                    F += +calc_F(self.centroids[cluster], S, 2)
 
                     # same for the child (sink)
                     disp = np.linalg.norm(F)
@@ -85,7 +86,8 @@ class NemoSolver:
                     F = F * d
                     S = S - F
 
-            self.df_nemo, ch_dict, ch_routes, remaining = get_cluster_heads(S, self.df_nemo, cluster, self.weighting)
+            self.df_nemo, ch_dict, ch_routes, remaining = get_cluster_heads(S, self.df_nemo, cluster, self.weighting,
+                                                                            req_col_name=self.weight_col)
             ch_idxs_dict[cluster] = list(ch_dict.keys())
             ch_routes_dict[cluster] = ch_routes
             # print("Cluster", cluster, "CH", ch_dict.keys(), "Remaining", remaining)
@@ -94,18 +96,18 @@ class NemoSolver:
         return self.df_nemo, ch_idxs_dict, ch_routes_dict
 
 
-def evaluate_nemo(prim_df, coords, centroids, W, L, slot_cols, iterations=100, weighting="spring"):
+def evaluate_nemo(prim_df, coords, centroids, W, L, slot_cols, iterations=100, weighting="spring", weight_col="weight"):
     eval_dict = {}
     df_dict = {}
     ch_idx_dict = {}
     ch_routes_dict = {}
 
     for slot_col in slot_cols:
-        print("Starting nemo for", slot_col, "with", weighting)
-        nemo = NemoSolver(prim_df, coords, centroids, W, L, weighting)
+        print("Starting nemo for", slot_col, "with", weighting, "and", weight_col)
+        nemo = NemoSolver(prim_df, coords, centroids, W, L, weighting, weight_col)
         df_nemo, ch_idx_dict[slot_col], ch_routes_dict[slot_col] = nemo.nemo(slot_col, iterations=iterations)
         df_stats = evaluate(df_nemo, coords)
         eval_dict[slot_col] = df_stats.copy()
-        df_dict[slot_col] = df_nemo[["cluster", slot_col, "parent", "route", "weight"]]
+        df_dict[slot_col] = df_nemo[["cluster", slot_col, "parent", "route", weight_col]]
 
     return df_dict, eval_dict, ch_idx_dict, ch_routes_dict
