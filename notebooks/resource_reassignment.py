@@ -151,7 +151,7 @@ def get_cluster_heads(opt, df, cluster, weighting, cl_col="cluster", av_col_name
 
             # update routes of the added node
             df.at[max_idx, parent_col_name] = min_idx
-            df.at[max_idx, route_col_name] = df.at[min_idx, route_col_name] + [min_idx]
+            df.at[max_idx, route_col_name] = [min_idx] + df.at[min_idx, route_col_name]
             ch_routes.append(df.at[max_idx, route_col_name])
 
             # remove added node from the element list
