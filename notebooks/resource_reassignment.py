@@ -1,5 +1,5 @@
 from util import replace, evaluate
-from scipy.spatial import cKDTree
+
 
 
 def reassign_cluster_heads(df, slot_col):
@@ -106,65 +106,47 @@ def reassign_cluster_heads(df, slot_col):
     return df, new_paths_dict, agg_dict
 
 
-def get_cluster_heads(opt, df, cluster, weighting, cl_col="cluster", av_col_name="free_slots", req_col_name="weight",
-                      opt_col_name="latency", parent_col_name="parent", route_col_name="route", w=0.5):
-    # Filter the DataFrame to get the group of elements with the same label
-    group_df = df[df[cl_col] == cluster].copy()
-
-    if weighting in ["penalize"]:
-        total_required = group_df[req_col_name].sum()
-        group_df["norm"] = (w * group_df[av_col_name]) / (total_required * group_df[opt_col_name])
-        opt_col_name = "norm"
-        sorted_df = group_df.sort_values(by=opt_col_name, ascending=False)
-    elif weighting in ["spring", "centroid"]:
-        kdtree = cKDTree(group_df[['x', 'y']])
-        idx_order = kdtree.query([opt[0], opt[1]], k=group_df.shape[0])[1]
-        sorted_df = group_df.iloc[idx_order]
-    else:
-        raise Exception("Undefined weighting", weighting)
-
-    remaining_elements = list(zip(sorted_df.index, sorted_df[av_col_name], sorted_df[req_col_name]))
-
+def get_cluster_heads(elements, df, res_threshold, av_col_name="free_slots", parent_col_name="parent"):
     # Initialize the result dictionary with the optimal index
     ch_dict = {}
-    ch_routes = []
-    while len(remaining_elements) > 0:
-        min_idx, av_resources, nnr = remaining_elements[0]
-        max_idx, nna, required = remaining_elements[len(remaining_elements) - 1]
+    current = 0
+    while elements:
+        min_idx, av_resources, nnr = elements[current]
+        if av_resources <= res_threshold:
+            elements.pop(0)
+            continue
 
-        # print("Mapping", min_idx, "->", max_idx, "Resources: ", av_resources, required)
-
+        max_idx, nna, required = elements[len(elements) - 1]
         if max_idx in ch_dict:
-            remaining_elements.pop(len(remaining_elements) - 1)
             break
 
         if av_resources >= required:
-            if min_idx in ch_dict:
-                ch_dict[min_idx].append(max_idx)
-            else:
-                ch_dict[min_idx] = [max_idx]
-
             # update values of the cluster head
             new_available = av_resources - required
-            remaining_elements[0] = (min_idx, new_available, nnr)
-            df.at[min_idx, av_col_name] = new_available
-
-            # update routes of the added node
-            df.at[max_idx, parent_col_name] = min_idx
-            df.at[max_idx, route_col_name] = [min_idx] + df.at[min_idx, route_col_name]
-            ch_routes.append(df.at[max_idx, route_col_name])
-
-            # remove added node from the element list
-            remaining_elements.pop(len(remaining_elements) - 1)
+            elements[0] = (min_idx, new_available, nnr)
+            create_mapping(max_idx, min_idx, df, ch_dict, new_available, av_col_name, parent_col_name)
+            elements.pop(len(elements) - 1)
         else:
-            # not enough resources, either remove the first element if it is a cluster head,
-            # or put it to the end of the list to be assigned to a cluster head
-            if min_idx in ch_dict:
-                remaining_elements.pop(0)
-            else:
-                remaining_elements.append(remaining_elements.pop(0))
+            # not enough resources, split mapping
+            remaining_required = required - av_resources
+            elements[0] = (min_idx, 0, nnr)
+            elements[len(elements) - 1] = max_idx, nna, remaining_required
+            create_mapping(max_idx, min_idx, df, ch_dict, 0, av_col_name, parent_col_name)
 
-    return df, ch_dict, ch_routes, remaining_elements
+    return df, ch_dict
+
+
+def create_mapping(child_idx, parent_idx, df, ch_dict, new_parent_resources, av_column, parent_column):
+    # create mapping
+    if parent_idx in ch_dict:
+        ch_dict[parent_idx].append(child_idx)
+    else:
+        ch_dict[parent_idx] = [child_idx]
+
+    # update parent resources
+    df.at[parent_idx, av_column] = new_parent_resources
+    # update routes of the added node
+    df.at[child_idx, parent_column] = df.at[child_idx, parent_column] + [parent_idx]
 
 
 def distribute_resources_and_evaluate(slot_columns, df, coords):
