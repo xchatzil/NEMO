@@ -25,16 +25,25 @@ def get_max_by_thresh(elements, threshold):
     return max_k
 
 
-def knn(root_coords, search_indexes, elements):
-    nn_idx = np.nan
-    nn_dist = sys.maxsize
-    for search_idx in search_indexes:
-        end_coords = elements[search_idx]
-        distance = np.linalg.norm(root_coords - end_coords)
-        if distance < nn_dist:
-            nn_dist = distance
-            nn_idx = search_idx
-    return nn_idx, nn_dist
+def calc_opt(point1, point2, w1=0.5, w2=0.5, k=0.1, num_iterations=100):
+    # Convert input points to numpy arrays
+    point1 = np.array(point1, dtype=np.float64)
+    point2 = np.array(point2, dtype=np.float64)
+
+    for _ in range(num_iterations):
+        # Calculate the displacement vector from point1 to point2
+        displacement = point2 - point1
+
+        # Calculate the force vector using Hooke's Law
+        force_vector = k * displacement
+
+        # Update the positions of point1 and point2 based on the force
+        point1 += np.round(w1 * force_vector, 2)
+        point2 -= np.round(w2 * force_vector, 2)
+
+    # The optimal point location is the average of point1 and point2
+    optimal_location = (point1 + point2) / 2.0
+    return optimal_location
 
 
 def evaluate(df_route, coords):
@@ -103,12 +112,12 @@ def lighten_color(color, amount=0.5):
 
 
 def get_diff(arr1, arr2):
-    if len(arr1) != len(arr2):
-        raise Exception("Lengths of arrays are not equivalent")
-    output = []
-    for i in range(0, len(arr1)):
-        if not np.array_equiv(arr1[i], arr2[i]):
-            output.append(i)
+    output = list(set(arr1).symmetric_difference(set(arr2)))
+    intersection = list(set(arr1).intersection(arr2))
+
+    for ele in intersection:
+        if not np.array_equiv(arr1[ele], arr2[ele]):
+            output.append(ele)
     return output
 
 
@@ -156,6 +165,86 @@ def plot(ax, paths, agg_points, c_coords, centroid_coords, coords, colors, label
         ax.legend(handles=[coordinator_label, worker_label, centroid_label, aggp_label], loc="upper left",
                   bbox_to_anchor=(0, 1),
                   prop={'size': leg_size})
+
+
+def plot2(ax, df_origin, df_plcmnt, colors, lval=0.2, leg_size=8):
+    line_style = "--"
+    clusters = df_origin["cluster"].unique()
+
+    for cluster in clusters:
+        # plot points
+        dfc = df_origin[df_origin["cluster"] == cluster]
+        ax.scatter(dfc["x"], dfc["y"], s=10, color=lighten_color(colors[cluster], lval), zorder=-1)
+
+        df_cluster = df_plcmnt[df_plcmnt["cluster"] == cluster]
+
+        parents = df_cluster["parent"].unique()
+        all_parent_parents = df_plcmnt[df_plcmnt["oindex"].isin(parents)][["parent"]]["parent"].unique()
+        for parent in parents:
+            # point 1 -> parent
+            point1 = df_origin.iloc[parent][["x", "y"]]
+            ax.scatter(point1["x"], point1["y"], s=50, color=colors[cluster], zorder=10, marker="x", label="agg. point")
+
+            # point 2 -> parent of parent
+            parent_parents = df_plcmnt[df_plcmnt["oindex"] == parent][["parent"]]["parent"].unique()
+            point2 = df_origin.iloc[parent_parents][["x", "y"]]
+            ax.scatter(point2["x"], point2["y"], s=50, color=colors[cluster], zorder=10, marker="x", label="agg. point")
+
+            for pp in parent_parents:
+                # plot connections
+                point2 = df_origin.iloc[pp][["x", "y"]]
+                x_values = [point1["x"], point2["x"]]
+                y_values = [point1["y"], point2["y"]]
+                ax.plot(x_values, y_values, line_style, zorder=3, color=colors[cluster])
+
+    ax.scatter(df_plcmnt.loc[0, "x"], df_plcmnt.loc[0, "y"], s=100, color=ccolor, marker=cmarker, zorder=10)
+
+    ax.set_xlabel('$network$ $coordinate_1$')
+    ax.set_ylabel('$network$ $coordinate_2$')
+
+    ax.legend(handles=[coordinator_label, worker_label, centroid_label, aggp_label], loc="upper left",
+              bbox_to_anchor=(0, 1), prop={'size': leg_size})
+
+
+def plot3(ax, df_origin, df_plcmnt, colors, lval=0.2, leg_size=8):
+    line_style = "--"
+    clusters = df_origin["cluster"].unique()
+    levels = df_plcmnt.loc[0, "level"] - 1
+
+    for cluster in clusters:
+        # plot points
+        dfc = df_origin[df_origin["cluster"] == cluster]
+        ax.scatter(dfc["x"], dfc["y"], s=10, color=lighten_color(colors[cluster], lval), zorder=-1)
+
+        for level in range(levels):
+            df_group = df_plcmnt[(df_plcmnt["cluster"] == cluster) & (df_plcmnt["level"] == level)]
+            parents = df_group["parent"].unique()
+            parent_parents = df_plcmnt[df_plcmnt["oindex"].isin(parents)][["parent"]]["parent"].unique()
+
+            # point1
+            point1 = df_origin.loc[parents, ["x", "y"]].mean()
+            ax.scatter(point1["x"], point1["y"], s=50, color=colors[cluster], zorder=10, marker="x", label="agg. point")
+
+            # point2
+            if level < levels:
+                point2 = df_origin.loc[parent_parents, ["x", "y"]].mean()
+            else:
+                point2 = df_origin.loc[0, ["x", "y"]]
+
+            ax.scatter(point2["x"], point2["y"], s=50, color=colors[cluster], zorder=10, marker="x", label="agg. point")
+
+            # plot connection
+            x_values = [point1["x"], point2["x"]]
+            y_values = [point1["y"], point2["y"]]
+            ax.plot(x_values, y_values, line_style, zorder=3, color=colors[cluster])
+
+    ax.scatter(df_plcmnt.loc[0, "x"], df_plcmnt.loc[0, "y"], s=100, color=ccolor, marker=cmarker, zorder=10)
+
+    ax.set_xlabel('$network$ $coordinate_1$')
+    ax.set_ylabel('$network$ $coordinate_2$')
+
+    ax.legend(handles=[coordinator_label, worker_label, centroid_label, aggp_label], loc="upper left",
+              bbox_to_anchor=(0, 1), prop={'size': leg_size})
 
 
 def full_extent(ax, pad=0.0):
