@@ -79,7 +79,6 @@ class NemoSolver:
                         self.create_mapping(child_idx, downstream_node, self.df_nemo.loc[child_idx, self.req_col])
                 break
             else:
-                # todo: merge the cluster heads that the set is getting reduced
                 new_cluster_heads = {}
                 if level >= 1:
                     current_cluster_heads = self.merge_clusters(current_cluster_heads, all_chs)
