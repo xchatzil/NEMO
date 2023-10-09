@@ -7,11 +7,13 @@ from matplotlib.transforms import Bbox
 lcl = "black"
 cmarker = "p"
 ccolor = lcl
-coordinator_label = Line2D([], [], color=lcl, marker=cmarker, linestyle='None', label='coordinator')
-worker_label = Line2D([], [], color="grey", marker='o', linestyle='None', label='worker', markersize=4)
+coordinator_label = Line2D([], [], color=lcl, marker=cmarker, linestyle='None', label='sink')
+worker_label = Line2D([], [], color="grey", marker='o', linestyle='None', label='sources', markersize=4)
 reassigned_label = Line2D([0, 1], [0, 1], linestyle='--', color=lcl, label='reassigned')
 centroid_label = Line2D([], [], color="grey", marker='o', linestyle='None', label='centroid')
-aggp_label = Line2D([], [], color=lcl, marker='x', linestyle='None', label='aggregation')
+ch_label = Line2D([], [], color=lcl, marker='x', linestyle='None', label='cluster head')
+log_opt_label = Line2D([], [], color=lcl, marker='+', linestyle='None', label='optimal cluster head')
+
 
 
 def get_max_by_thresh(elements, threshold):
@@ -159,15 +161,15 @@ def plot(ax, paths, agg_points, c_coords, centroid_coords, coords, colors, label
     ax.set_ylabel('$network$ $coordinate_2$')
 
     if changed_labels:
-        ax.legend(handles=[coordinator_label, worker_label, centroid_label, aggp_label, reassigned_label],
+        ax.legend(handles=[coordinator_label, worker_label, centroid_label, ch_label, reassigned_label],
                   loc="upper left", bbox_to_anchor=(0, 1), fontsize=leg_size)
     else:
-        ax.legend(handles=[coordinator_label, worker_label, centroid_label, aggp_label], loc="upper left",
+        ax.legend(handles=[coordinator_label, worker_label, centroid_label, ch_label], loc="upper left",
                   bbox_to_anchor=(0, 1),
                   prop={'size': leg_size})
 
 
-def plot2(ax, df_origin, df_plcmnt, colors, lval=0.2, leg_size=8):
+def plot2(ax, df_origin, df_plcmnt, colors, lval=0.2, leg_size=8, plot_centroids=False, plot_lines=False):
     line_style = "--"
     clusters = df_origin["cluster"].unique()
 
@@ -179,71 +181,83 @@ def plot2(ax, df_origin, df_plcmnt, colors, lval=0.2, leg_size=8):
         df_cluster = df_plcmnt[df_plcmnt["cluster"] == cluster]
 
         parents = df_cluster["parent"].unique()
-        all_parent_parents = df_plcmnt[df_plcmnt["oindex"].isin(parents)][["parent"]]["parent"].unique()
+        if plot_centroids:
+            point1 = df_cluster[["x", "y"]].mean()
+            ax.scatter(point1["x"], point1["y"], s=50, color=colors[cluster], zorder=10, label="centroid")
+
+            for parent in parents:
+                if parent != 0:
+                    point2 = df_origin.iloc[parent][["x", "y"]]
+                    ax.scatter(point2["x"], point2["y"], s=50, color=colors[cluster], zorder=10, marker="x",
+                               label="agg. point")
+
+                    x_values = [point1["x"], point2["x"]]
+                    y_values = [point1["y"], point2["y"]]
+                    if plot_lines:
+                        ax.plot(x_values, y_values, "-", zorder=3, color=colors[cluster])
+
         for parent in parents:
             # point 1 -> parent
             point1 = df_origin.iloc[parent][["x", "y"]]
-            ax.scatter(point1["x"], point1["y"], s=50, color=colors[cluster], zorder=10, marker="x", label="agg. point")
+            ax.scatter(point1["x"], point1["y"], s=50, color=colors[cluster], zorder=10, marker="x",
+                       label="agg. point")
 
             # point 2 -> parent of parent
             parent_parents = df_plcmnt[df_plcmnt["oindex"] == parent][["parent"]]["parent"].unique()
             point2 = df_origin.iloc[parent_parents][["x", "y"]]
-            ax.scatter(point2["x"], point2["y"], s=50, color=colors[cluster], zorder=10, marker="x", label="agg. point")
+            ax.scatter(point2["x"], point2["y"], s=50, color=colors[cluster], zorder=10, marker="x",
+                       label="agg. point")
 
             for pp in parent_parents:
                 # plot connections
                 point2 = df_origin.iloc[pp][["x", "y"]]
                 x_values = [point1["x"], point2["x"]]
                 y_values = [point1["y"], point2["y"]]
-                ax.plot(x_values, y_values, line_style, zorder=3, color=colors[cluster])
+                if plot_lines:
+                    ax.plot(x_values, y_values, line_style, zorder=3, color=colors[cluster])
 
     ax.scatter(df_plcmnt.loc[0, "x"], df_plcmnt.loc[0, "y"], s=100, color=ccolor, marker=cmarker, zorder=10)
 
     ax.set_xlabel('$network$ $coordinate_1$')
     ax.set_ylabel('$network$ $coordinate_2$')
 
-    ax.legend(handles=[coordinator_label, worker_label, centroid_label, aggp_label], loc="upper left",
+    if plot_centroids:
+        handles = [coordinator_label, worker_label, centroid_label, ch_label]
+    else:
+        handles = [coordinator_label, worker_label, ch_label]
+
+    ax.legend(handles=handles, loc="upper left",
               bbox_to_anchor=(0, 1), prop={'size': leg_size})
 
 
-def plot3(ax, df_origin, df_plcmnt, colors, lval=0.2, leg_size=8):
-    line_style = "--"
-    clusters = df_origin["cluster"].unique()
-    levels = df_plcmnt.loc[0, "level"] - 1
-
+def plot_optimum(ax, df_origin, opt_dicts, colors, lval=0.2, leg_size=8, plot_centroid=False, plot_lines=False):
+    ccords = df_origin.loc[0, ["x", "y"]].tolist()
+    clusters = df_origin["cluster"][df_origin["cluster"] >= 0].unique()
     for cluster in clusters:
-        # plot points
-        dfc = df_origin[df_origin["cluster"] == cluster]
-        ax.scatter(dfc["x"], dfc["y"], s=10, color=lighten_color(colors[cluster], lval), zorder=-1)
+        df_cluster = df_origin[df_origin["cluster"] == cluster]
+        ax.scatter(df_cluster["x"], df_cluster["y"], s=10, color=lighten_color(colors[cluster], lval), zorder=-1)
 
-        for level in range(levels):
-            df_group = df_plcmnt[(df_plcmnt["cluster"] == cluster) & (df_plcmnt["level"] == level)]
-            parents = df_group["parent"].unique()
-            parent_parents = df_plcmnt[df_plcmnt["oindex"].isin(parents)][["parent"]]["parent"].unique()
+        point2 = opt_dicts[1][cluster]
+        ax.scatter(point2[0], point2[1], s=50, color=colors[cluster], zorder=10, marker="+",
+                   label="agg. point")
 
-            # point1
-            point1 = df_origin.loc[parents, ["x", "y"]].mean()
-            ax.scatter(point1["x"], point1["y"], s=50, color=colors[cluster], zorder=10, marker="x", label="agg. point")
+        if plot_centroid:
+            point1 = df_cluster[["x", "y"]].mean().tolist()
+            ax.scatter(point1[0], point1[1], s=50, color=colors[cluster], zorder=10, label="centroid")
+            if plot_lines:
+                ax.plot([point1[0], point2[0]], [point1[1], point2[1]], "--", zorder=3, color=colors[cluster])
+                ax.plot([point2[0], ccords[0]], [point2[1], ccords[1]], "--", zorder=3, color=colors[cluster])
 
-            # point2
-            if level < levels:
-                point2 = df_origin.loc[parent_parents, ["x", "y"]].mean()
-            else:
-                point2 = df_origin.loc[0, ["x", "y"]]
-
-            ax.scatter(point2["x"], point2["y"], s=50, color=colors[cluster], zorder=10, marker="x", label="agg. point")
-
-            # plot connection
-            x_values = [point1["x"], point2["x"]]
-            y_values = [point1["y"], point2["y"]]
-            ax.plot(x_values, y_values, line_style, zorder=3, color=colors[cluster])
-
-    ax.scatter(df_plcmnt.loc[0, "x"], df_plcmnt.loc[0, "y"], s=100, color=ccolor, marker=cmarker, zorder=10)
+    ax.scatter(df_origin.loc[0, "x"], df_origin.loc[0, "y"], s=100, color=ccolor, marker=cmarker, zorder=10)
 
     ax.set_xlabel('$network$ $coordinate_1$')
     ax.set_ylabel('$network$ $coordinate_2$')
 
-    ax.legend(handles=[coordinator_label, worker_label, centroid_label, aggp_label], loc="upper left",
+    if plot_centroid:
+        handles = [coordinator_label, worker_label, centroid_label, log_opt_label]
+    else:
+        handles = [coordinator_label, worker_label, log_opt_label]
+    ax.legend(handles=handles, loc="upper left",
               bbox_to_anchor=(0, 1), prop={'size': leg_size})
 
 
