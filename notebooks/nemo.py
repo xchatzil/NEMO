@@ -90,6 +90,7 @@ class NemoSolver:
             level += 1
             opt_dict_iter[level] = opt_dict
 
+        # returns result df, and dict with the local optima without replication
         return self.expand_df(slot_col), opt_dict_iter
 
     def merge_clusters(self, cluster_head_dict, cluster_heads):
