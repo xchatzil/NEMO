@@ -15,7 +15,6 @@ ch_label = Line2D([], [], color=lcl, marker='x', linestyle='None', label='cluste
 log_opt_label = Line2D([], [], color=lcl, marker='+', linestyle='None', label='optimal cluster head')
 
 
-
 def get_max_by_thresh(elements, threshold):
     max_k = np.argmax(elements)
     min_t = max(0, elements[max_k] - threshold)
@@ -48,24 +47,43 @@ def calc_opt(point1, point2, w1=0.5, w2=0.5, k=0.1, num_iterations=100):
     return optimal_location
 
 
-def evaluate(df_route, coords):
-    device_number = df_route.shape[0]
+# Function to find the path to the root
+def find_path_to_root(df, child_idx, root_idx=0):
+    path = []  # Initialize an empty list to store the path
 
+    # Define a recursive function to trace the path
+    latency = 0
+
+    def trace_path(index):
+        nonlocal latency
+        row = df[df['oindex'] == index]
+        if not row.empty:
+            path.append(index)
+            parent_index = row['parent'].values[0]
+            parent_row = df[df['oindex'] == parent_index].head(1)
+            latency += np.linalg.norm(row[["x", "y"]].to_numpy() - parent_row[["x", "y"]].to_numpy())
+            if parent_index != root_idx:
+                trace_path(parent_index)
+            else:
+                path.append(root_idx)
+        else:
+            print(f"Index {index} not found in the DataFrame.")
+
+    trace_path(child_idx)  # Start tracing the path from the target_index
+    return path, latency  # Reverse the path to go from root to target
+
+
+def evaluate(df, coords):
+    device_number = df.shape[0]
+    received_packets_hist = (df["total_capacity"] - df["free_capacity"]).to_numpy()
     # first node is the coordinator
     latency_hist = np.zeros(device_number)
-    received_packets_hist = np.zeros(device_number)
+    lookup = {}
 
     for i in range(1, device_number):
-        # calculate euclidean distance which corresponds to the cost space (latency)
-        dist = 0
-        lat_route = df_route.at[i, "route"]
-        start = coords[i]
-        received_packets_hist[lat_route[0]] += 1
-        for j in range(0, len(lat_route)):
-            end = coords[lat_route[j]]
-            dist = dist + np.linalg.norm(start - end)
-            start = end
-        latency_hist[i] = dist
+        idx = df.loc[i, "oindex"]
+        path, latency = find_path_to_root(df, idx, root_idx=0)
+        latency_hist[i] = latency
 
     statistics = {"latency_distribution": latency_hist,
                   "received_packets": received_packets_hist}

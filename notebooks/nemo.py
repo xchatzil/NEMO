@@ -235,11 +235,13 @@ def evaluate_nemo(prim_df, coords, centroids, W, L, slot_cols, max_levels=20, it
                   weight_col="weight"):
     df_dict = {}
     opt_dicts = {}
+    eval_matrix_slots = {}
 
     for slot_col in slot_cols:
         print("Starting nemo for", slot_col, "with", weighting, "and", weight_col, "and level:", max_levels)
         nemo = NemoSolver(prim_df, coords, centroids, W, L, iterations=iterations, weighting=weighting,
                           max_levels=max_levels, weight_col=weight_col)
         df_dict[slot_col], opt_dicts[slot_col] = nemo.nemo(slot_col)
+        eval_matrix_slots[slot_col] = evaluate(df_dict[slot_col], coords)
 
-    return df_dict, opt_dicts
+    return eval_matrix_slots, df_dict, opt_dicts
