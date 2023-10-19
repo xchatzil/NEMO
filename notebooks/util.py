@@ -48,7 +48,7 @@ def calc_opt(point1, point2, w1=0.5, w2=0.5, k=0.1, num_iterations=100):
 
 
 # Function to find the path to the root
-def find_path_to_root(df, child_idx, root_idx=0):
+def find_path_to_root(df, coords, child_idx, root_idx=0):
     path = []  # Initialize an empty list to store the path
 
     # Define a recursive function to trace the path
@@ -57,17 +57,13 @@ def find_path_to_root(df, child_idx, root_idx=0):
     def trace_path(index):
         nonlocal latency
         row = df[df['oindex'] == index]
-        if not row.empty:
-            path.append(index)
-            parent_index = row['parent'].values[0]
-            parent_row = df[df['oindex'] == parent_index].head(1)
-            latency += np.linalg.norm(row[["x", "y"]].to_numpy() - parent_row[["x", "y"]].to_numpy())
-            if parent_index != root_idx:
-                trace_path(parent_index)
-            else:
-                path.append(root_idx)
+        path.append(index)
+        parent_index = row['parent'].values[0]
+        latency += np.linalg.norm(row[["x", "y"]].to_numpy() - coords[parent_index])
+        if parent_index != root_idx:
+            trace_path(parent_index)
         else:
-            print(f"Index {index} not found in the DataFrame.")
+            path.append(root_idx)
 
     trace_path(child_idx)  # Start tracing the path from the target_index
     return path, latency  # Reverse the path to go from root to target
@@ -75,18 +71,25 @@ def find_path_to_root(df, child_idx, root_idx=0):
 
 def evaluate(df, coords):
     device_number = df.shape[0]
-    received_packets_hist = (df["total_capacity"] - df["free_capacity"]).to_numpy()
-    # first node is the coordinator
-    latency_hist = np.zeros(device_number)
-    lookup = {}
+    latencies = np.zeros(device_number)
+    lookup = {0: 0}
 
     for i in range(1, device_number):
         idx = df.loc[i, "oindex"]
-        path, latency = find_path_to_root(df, idx, root_idx=0)
-        latency_hist[i] = latency
+        if idx in lookup:
+            latency = lookup[idx]
+        else:
+            path, latency = find_path_to_root(df, coords, idx, root_idx=0)
+            lookup[idx] = latency
+        latencies[i] = latency
 
-    statistics = {"latency_distribution": latency_hist,
-                  "received_packets": received_packets_hist}
+    df["latency"] = latencies
+    df["load"] = df["total_capacity"] - df["free_capacity"]
+
+    group = df.groupby("oindex")[["latency", "load"]].mean()
+
+    statistics = {"latency_distribution": group["latency"].to_numpy(),
+                  "received_packets": group["load"].to_numpy()}
     df_stats = pd.DataFrame(statistics)
     return df_stats
 

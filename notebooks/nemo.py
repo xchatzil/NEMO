@@ -10,12 +10,10 @@ from util import evaluate
 
 
 class NemoSolver:
-    def __init__(self, df_coords, coords, centroids, W, L, weighting="spring", threshold=0.1, iterations=100,
+    def __init__(self, df_coords, coords, centroids, weighting="spring", threshold=0.1, iterations=100,
                  max_levels=20, weight_col="weight"):
         self.df_nemo = df_coords.copy()
         self.coords = coords
-        self.W = W
-        self.L = L
         self.weighting = weighting
         self.req_col = weight_col
         self.threshold = threshold
@@ -33,10 +31,6 @@ class NemoSolver:
         # assignments
         self.c_coords = self.df_nemo[self.df_nemo["type"] == "coordinator"][["x", "y"]].values[0]
         self.c_indices = self.df_nemo[self.df_nemo["type"] == "coordinator"].index.values
-
-        self.area = W * L
-        self.k = math.sqrt(self.area / self.device_number)
-        self.t = W / 10
 
         self.unique_clusters = self.df_nemo[self.df_nemo['cluster'] >= 0]['cluster'].unique().tolist()
         self.num_clusters = len(self.unique_clusters)
@@ -231,17 +225,21 @@ def calc_routes(df):
     return df
 
 
-def evaluate_nemo(prim_df, coords, centroids, W, L, slot_cols, max_levels=20, iterations=100, weighting="spring",
-                  weight_col="weight"):
+def evaluate_nemo(prim_df, coords, centroids, slot_cols, max_levels=20, iterations=100, weighting="spring",
+                  weight_col="weight", show_eval=True):
     df_dict = {}
     opt_dicts = {}
     eval_matrix_slots = {}
 
     for slot_col in slot_cols:
         print("Starting nemo for", slot_col, "with", weighting, "and", weight_col, "and level:", max_levels)
-        nemo = NemoSolver(prim_df, coords, centroids, W, L, iterations=iterations, weighting=weighting,
+        nemo = NemoSolver(prim_df, coords, centroids, iterations=iterations, weighting=weighting,
                           max_levels=max_levels, weight_col=weight_col)
         df_dict[slot_col], opt_dicts[slot_col] = nemo.nemo(slot_col)
-        eval_matrix_slots[slot_col] = evaluate(df_dict[slot_col], coords)
+        if show_eval:
+            print("Evaluating for", slot_col)
+            eval_matrix_slots[slot_col] = evaluate(df_dict[slot_col], coords)
+        else:
+            eval_matrix_slots[slot_col] = None
 
     return eval_matrix_slots, df_dict, opt_dicts

@@ -25,7 +25,7 @@ def get_lognorm_samples(min, max, num_samples, mu=0.8, sigma=1.5):
 
 
 def setup_topology(H, max_resources, c_capacity=50, centers=40, x_dim_range=(0, 100), y_dim_range=(-50, 50),
-                   size=1000, seed=4, weights=(1, 1)):
+                   size=1000, seed=4, weights=(1, 1), dist="lognorm"):
     np.random.seed(seed)
     device_number = size + 1  # first node is the coordinator
     types = ["coordinator", "worker"]
@@ -49,7 +49,10 @@ def setup_topology(H, max_resources, c_capacity=50, centers=40, x_dim_range=(0, 
     base_col = "base"
     df[base_col] = sys.maxsize
 
-    df["weight"] = get_lognorm_samples(weights[0], weights[1], size+1)
+    if dist == "lognorm":
+        df["weight"] = get_lognorm_samples(weights[0], weights[1], size+1)
+    else:
+        df["weight"] = np.random.randint(weights[0], weights[1] + 1, size + 1)
     df.at[0, "weight"] = 0
 
     sums = []
