@@ -59,6 +59,7 @@ class NemoSolver:
             av = sys.maxsize
         else:
             av = self.df_nemo.loc[downstream_node, self.av_col].sum()
+        resource_limit = False
 
         while True:
             opt_dict = {}
@@ -66,7 +67,7 @@ class NemoSolver:
             self.df_nemo.loc[all_chs, "level"] = level
             load = self.df_nemo.loc[all_chs, "weight"].sum()
 
-            if av >= load or level == self.max_levels:
+            if av >= load or level == self.max_levels or resource_limit:
                 # set parent of cluster heads to downstream node
                 for cluster in current_cluster_heads.keys():
                     for child_idx in current_cluster_heads[cluster]:
@@ -80,6 +81,9 @@ class NemoSolver:
                     upstream_nodes = current_cluster_heads[cluster]
                     new_cluster_heads[cluster], opt = self.balance_load(list(upstream_nodes), [downstream_node])
                     opt_dict[cluster] = opt
+                    if opt is None:
+                        resource_limit = True
+                        break
                 current_cluster_heads = new_cluster_heads
             level += 1
             opt_dict_iter[level] = opt_dict
@@ -123,38 +127,52 @@ class NemoSolver:
         return out
 
     def balance_load(self, upstream_nodes, downstream_node):
+        intersection = list(set(upstream_nodes).intersection(downstream_node))
+        if intersection:
+            print("Intersection found in balance load", intersection)
+
         # calculate logical opt for the operator in the continuous space
         s1 = self.df_nemo.iloc[upstream_nodes][["x", "y"]].mean()
         s2 = self.df_nemo.iloc[downstream_node][["x", "y"]].mean()
         opt = util.calc_opt(s1, s2, w1=0.1)
 
+        # preform knn search
+        # print("Performing knn for", [opt[0], opt[1]], "with k=", k)
+        df_knn = self.df_nemo.iloc[list(self.knn_nodes)]
+        full_kdtree = cKDTree(df_knn[["x", "y"]])
+        idx_order = full_kdtree.query([opt[0], opt[1]], k=len(self.knn_nodes))[1]
+        idx_order = df_knn['oindex'].iloc[idx_order].tolist()
+
         req = self.df_nemo.loc[upstream_nodes, self.req_col].sum()
-        sum_avs = 0
+        if self.df_nemo.at[0, self.av_col] == sys.maxsize:
+            sum_avs = sys.maxsize
+        else:
+            sum_avs = self.df_nemo.loc[idx_order, self.av_col].sum()
 
-        idx_order = []
-        while sum_avs < req:
-            # preform knn search
-            # print("Performing knn for", [opt[0], opt[1]], "with k=", k)
-            df_knn = self.df_nemo.iloc[list(self.knn_nodes)]
-            full_kdtree = cKDTree(df_knn[["x", "y"]])
-            idx_order = full_kdtree.query([opt[0], opt[1]], k=len(self.knn_nodes))[1]
-            idx_order = df_knn['oindex'].iloc[idx_order].tolist()
+        if req > sum_avs:
+            print("Topology does not contain enough available resources " + str(req) + "/" + str(sum_avs))
+            return upstream_nodes, None
 
-            if self.df_nemo.at[0, self.av_col] == sys.maxsize:
-                sum_avs = sys.maxsize
-            else:
-                sum_avs = self.df_nemo.loc[idx_order, self.av_col].sum()
-
-        assert req <= sum_avs, "Topology does not contain enough available resources " + str(req) + "/" + str(sum_avs)
-        return self.assign_resources(upstream_nodes, list(idx_order)), opt
+        parents, failed = self.assign_resources(upstream_nodes, list(idx_order))
+        if failed:
+            return upstream_nodes, None
+        else:
+            return parents, opt
 
     def assign_resources(self, from_idxs, to_idxs):
         # res_threshold = int(self.threshold * self.df_nemo.loc[to_idxs, self.av_col].median())
         res_threshold = 0
         tmp = None
         parents = set()
+        failed = False
 
         while from_idxs:
+            if not to_idxs:
+                print("Assigning resources failed. Remaining nodes can not be re-balanced", from_idxs)
+                parents.update(from_idxs)
+                failed = True
+                break
+
             parent_idx = to_idxs[0]
             av_resources = self.df_nemo.loc[parent_idx, self.av_col]
 
@@ -171,6 +189,10 @@ class NemoSolver:
                 required = self.df_nemo.loc[child_idx, self.req_col]
                 split = False
 
+            if child_idx == parent_idx:
+                idx = to_idxs.pop(0)
+                self.knn_nodes.remove(idx)
+
             if av_resources >= required:
                 # update values of the cluster head
                 self.create_mapping(child_idx, parent_idx, required, split)
@@ -183,7 +205,7 @@ class NemoSolver:
                 tmp = (child_idx, remaining_required)
 
             parents.add(parent_idx)
-        return parents
+        return parents, failed
 
     def create_mapping(self, child_idx, parent_idx, mapped_resources, split=False):
         parents = self.df_nemo.at[child_idx, self.parent_col]

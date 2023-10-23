@@ -1,5 +1,5 @@
 import numpy as np
-import sys
+import seaborn as sns
 import pandas as pd
 from matplotlib.lines import Line2D
 from matplotlib.transforms import Bbox
@@ -59,6 +59,7 @@ def find_path_to_root(df, coords, child_idx, root_idx=0):
         row = df[df['oindex'] == index]
         path.append(index)
         parent_index = row['parent'].values[0]
+        # print(index, parent_index)
         latency += np.linalg.norm(row[["x", "y"]].to_numpy() - coords[parent_index])
         if parent_index != root_idx:
             trace_path(parent_index)
@@ -144,53 +145,15 @@ def get_diff(arr1, arr2):
     return output
 
 
-def plot(ax, paths, agg_points, c_coords, centroid_coords, coords, colors, labels, changed_labels=None, lval=0.2,
-         leg_size=8, print_centroids=True):
-    no_clusters = len(np.unique(labels))
-    for cl_label in range(no_clusters):
-        line_style = "-"
-        if changed_labels and (cl_label in changed_labels):
-            line_style = "--"
-
-        # print connections with centroids
-        if print_centroids:
-            point1 = centroid_coords[cl_label]
-            ax.scatter(point1[0], point1[1], s=50, color=colors[cl_label], zorder=4, label="centroid")
-            for agg_point_idx in agg_points[cl_label]:
-                point2 = coords[agg_point_idx]
-                x_values = [point1[0], point2[0]]
-                y_values = [point1[1], point2[1]]
-                ax.plot(x_values, y_values, line_style, zorder=2, color=lighten_color(colors[cl_label], lval + 0.2))
-
-        for agg_point_idx in agg_points[cl_label]:
-            point2 = coords[agg_point_idx]
-            ax.scatter(point2[0], point2[1], s=50, color=colors[cl_label], zorder=3, marker="x", label="agg. point")
-
-        # print connections of agg points
-        for p1_idx, p2_idx in paths[cl_label]:
-            point1 = coords[p1_idx]
-            point2 = coords[p2_idx]
-            x_values = [point1[0], point2[0]]
-            y_values = [point1[1], point2[1]]
-            ax.plot(x_values, y_values, line_style, zorder=2, color=lighten_color(colors[cl_label], lval + 0.2))
-
-    ax.scatter(coords[0, 0], coords[0, 1], s=100, color=ccolor, marker=cmarker, zorder=10)
-    # in case all coords shall be plotted
-    ax.scatter(coords[:, 0], coords[:, 1], s=10, color=[lighten_color(x, lval) for x in colors[labels]], zorder=-1)
-
-    ax.set_xlabel('$network$ $coordinate_1$')
-    ax.set_ylabel('$network$ $coordinate_2$')
-
-    if changed_labels:
-        ax.legend(handles=[coordinator_label, worker_label, centroid_label, ch_label, reassigned_label],
-                  loc="upper left", bbox_to_anchor=(0, 1), fontsize=leg_size)
-    else:
-        ax.legend(handles=[coordinator_label, worker_label, centroid_label, ch_label], loc="upper left",
-                  bbox_to_anchor=(0, 1),
-                  prop={'size': leg_size})
+def get_color_list(num_colors):
+    colors = sns.color_palette(n_colors=num_colors)
+    # colors.insert(0, "black")
+    colors_hex = np.asarray(colors.as_hex())
+    light_colors = [lighten_color(x) for x in colors_hex]
+    return colors_hex, light_colors, colors
 
 
-def plot2(ax, df_origin, df_plcmnt, colors, lval=0.2, leg_size=8, plot_centroids=False, plot_lines=False):
+def plot(ax, df_origin, df_plcmnt, colors, lval=0.2, leg_size=8, plot_centroids=False, plot_lines=False):
     line_style = "--"
     clusters = df_origin["cluster"].unique()
 
@@ -280,6 +243,37 @@ def plot_optimum(ax, df_origin, opt_dicts, colors, lval=0.2, leg_size=8, plot_ce
         handles = [coordinator_label, worker_label, log_opt_label]
     ax.legend(handles=handles, loc="upper left",
               bbox_to_anchor=(0, 1), prop={'size': leg_size})
+
+
+def plot_topology(ax, df, colors=None, title="Topology"):
+    c_coords = df.loc[0, ["x", "y"]].to_numpy()
+
+    if colors is not None:
+        labels = df["cluster"].to_numpy()
+        df.plot.scatter(ax=ax, x="x", y="y", color=colors[labels], s=df["capacity_" + str(100)] * 0.15)
+    else:
+        df.plot.scatter(ax=ax, x="x", y="y", c="grey", s=df["capacity_" + str(100)] * 0.15)
+
+    ax.scatter(c_coords[0], c_coords[1], s=100, marker=cmarker, color='black')
+
+    ax.legend(handles=[coordinator_label, worker_label], loc="upper left", bbox_to_anchor=(0, 1), fontsize=8)
+    ax.set_xlabel('$network$ $coordinate_1$', fontsize=18)
+    ax.set_ylabel('$network$ $coordinate_2$', fontsize=18)
+    ax.set_title(title)
+    return ax
+
+
+def plot_groups(ax, df, colors):
+    c_coords = df.loc[0, ["x", "y"]].to_numpy()
+    labels = df["cluster"].to_numpy()
+    df.plot.scatter(ax=ax, x="x", y="y", color=colors[labels], s=df["capacity_" + str(100)] * 0.15)
+
+    ax.scatter(c_coords[0], c_coords[1], s=100, marker=cmarker, color='black')
+
+    ax.legend(handles=[coordinator_label, worker_label], loc="upper left", bbox_to_anchor=(0, 1), fontsize=8)
+    ax.set_xlabel('$network$ $coordinate_1$')
+    ax.set_ylabel('$network$ $coordinate_2$')
+    return ax
 
 
 def full_extent(ax, pad=0.0):

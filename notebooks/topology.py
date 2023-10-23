@@ -1,10 +1,17 @@
 import pandas as pd
 import numpy as np
-import numpy.random as rd
 from sklearn.datasets import make_blobs
 import util
 from scipy.stats import lognorm
 import sys
+from sklearn.cluster import KMeans
+from util import get_max_by_thresh
+from sklearn.metrics import silhouette_score
+
+path_FIT = "datasets/FIT/coords/FIT0_calc_coords.csv"
+path_RIPE_ATLAS = "datasets/RIPEAtlas/19062023/RIPEAtlas_coords.csv"
+path_KING = "datasets/vivaldi_king.txt"
+path_PLANETLAB = "datasets/planetlab.txt"
 
 
 def get_lognorm_hist():
@@ -24,38 +31,7 @@ def get_lognorm_samples(min, max, num_samples, mu=0.8, sigma=1.5):
     return lognorm_samples
 
 
-def setup_topology(H, max_resources, c_capacity=50, centers=40, x_dim_range=(0, 100), y_dim_range=(-50, 50),
-                   size=1000, seed=4, weights=(1, 1), dist="lognorm"):
-    np.random.seed(seed)
-    device_number = size + 1  # first node is the coordinator
-    types = ["coordinator", "worker"]
-    types_dist = [types[1]]
-
-    type_list = [types_dist[rd.randint(0, len(types_dist))] for x in range(device_number - 1)]
-    type_list.insert(0, types[0])
-
-    # blobs with varied variances
-    stds = np.random.uniform(low=0.5, high=5.3, size=(centers,))
-    coords, y = make_blobs(n_samples=device_number, centers=centers, n_features=2, shuffle=True,
-                           cluster_std=stds,
-                           center_box=((x_dim_range[0], y_dim_range[0]), (x_dim_range[1], y_dim_range[1])),
-                           random_state=31)
-    c_coords = coords[0]
-
-    df = pd.DataFrame(coords, columns=["x", "y"])
-    df['latency'] = list(zip(df.x, df.y))
-    df['latency'] = df['latency'].apply(lambda x: np.linalg.norm(x - c_coords))
-    df['type'] = pd.Series(type_list, dtype="category")
-    base_col = "base"
-    df[base_col] = sys.maxsize
-
-    if dist == "lognorm":
-        df["weight"] = get_lognorm_samples(weights[0], weights[1], size+1)
-    else:
-        df["weight"] = np.random.randint(weights[0], weights[1] + 1, size + 1)
-    df.at[0, "weight"] = 0
-
-    sums = []
+def add_capacity_columns(df, H, max_capacity, c_capacity, size):
     slot_columns = []
     for i in range(len(H), 0, -1):
         if (i % 10 == 0) or (i == 5) or (i == 1):
@@ -64,16 +40,100 @@ def setup_topology(H, max_resources, c_capacity=50, centers=40, x_dim_range=(0, 
             p /= p.sum()  # normalize
             pop = np.arange(i - 1, len(H))
 
-            slot_list = np.random.choice(pop, device_number - 1, p=p, replace=True)
+            slot_list = np.random.choice(pop, size - 1, p=p, replace=True)
             slot_list = np.insert(slot_list, 0, 0)
 
             col = "capacity_" + str(i)
             df[col] = pd.Series(slot_list, dtype="int")
-            df["capacity_" + str(i)] = df[col] / df[col].sum() * max_resources
+            df["capacity_" + str(i)] = df[col] / df[col].sum() * max_capacity
 
             df[col] = np.ceil(df[col]).astype("int")
             df.at[0, col] = c_capacity
-            sums.append((df[col].sum()))
             slot_columns.append(col)
+    return df, slot_columns
 
-    return df, coords, c_coords, base_col, slot_columns, sums
+
+def coords_ripe_atlas(path=path_RIPE_ATLAS):
+    df_atlas = pd.read_csv(path, sep=",", header=None, names=["x", "y"])
+    return df_atlas
+
+
+def coords_fit(path=path_FIT):
+    df = pd.read_csv(path, header=None, names=["x", "y"])
+    return df
+
+
+def coords_KING(path=path_KING):
+    df_king = pd.read_csv(path, sep=" ", header=None, names=["name", "x", "y"])
+    return df_king[["x", "y"]]
+
+
+def coords_PLANETLAB(path=path_PLANETLAB):
+    df_plb = pd.read_csv(path, sep=" ", header=None, names=["name", "x", "y"])
+    return df_plb[["x", "y"]]
+
+
+def coords_sim(size, centers=40, x_dim_range=(0, 100), y_dim_range=(-50, 50), seed=4):
+    np.random.seed(seed)
+    device_number = size + 1  # first node is the coordinator
+
+    # blobs with varied variances
+    stds = np.random.uniform(low=0.5, high=5.3, size=(centers,))
+    coords, y = make_blobs(n_samples=device_number, centers=centers, n_features=2, shuffle=True,
+                           cluster_std=stds,
+                           center_box=((x_dim_range[0], y_dim_range[0]), (x_dim_range[1], y_dim_range[1])),
+                           random_state=31)
+
+    df = pd.DataFrame(coords, columns=["x", "y"])
+    return df
+
+
+def add_cluster_labels(df, opt_k=None, kmin=2, kmax=30, kseed=20):
+    print("Adding cluster labels")
+    coords = df[["x", "y"]]
+    sil = []
+
+    if not opt_k:
+        # dissimilarity would not be defined for a single cluster, thus, minimum number of clusters should be 2
+        for k in range(kmin, kmax + 1):
+            if k % 5 == 0:
+                print(k)
+            kmeans = KMeans(n_clusters=k, n_init='auto', random_state=kseed).fit(coords)
+            labels = kmeans.labels_
+            sil.append(silhouette_score(coords, labels, metric='euclidean'))
+
+        opt_k = get_max_by_thresh(sil, 0.00)
+        print("Optimal k is", opt_k)
+
+    cluster_alg = KMeans(n_clusters=opt_k, n_init='auto').fit(coords)
+    labels = cluster_alg.labels_
+    centroids = cluster_alg.cluster_centers_
+
+    df["cluster"] = labels
+    df.loc[0, "cluster"] = -1
+    return df, centroids, opt_k, sil
+
+
+def setup_topology(df, H, max_resources, c_capacity=50, weights=(1, 1), dist="lognorm"):
+    df = df.copy()
+    coords = df[["x", "y"]].to_numpy()
+    c_coords = coords[0]
+
+    df['latency'] = list(zip(df.x, df.y))
+    df['latency'] = df['latency'].apply(lambda x: np.linalg.norm(x - c_coords))
+
+    type_list = ["worker" for x in range(len(coords) - 1)]
+    type_list.insert(0, "coordinator")
+    df["type"] = pd.Series(type_list, dtype="category")
+
+    base_col = "base"
+    df[base_col] = sys.maxsize
+
+    if dist == "lognorm":
+        df["weight"] = get_lognorm_samples(weights[0], weights[1], len(coords))
+    else:
+        df["weight"] = np.random.randint(weights[0], weights[1] + 1, len(coords))
+    df.at[0, "weight"] = 0
+
+    df, slot_columns = add_capacity_columns(df, H, max_resources, c_capacity, len(coords))
+    return df, c_coords, base_col, slot_columns
