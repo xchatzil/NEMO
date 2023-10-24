@@ -88,21 +88,30 @@ def coords_sim(size, centers=40, x_dim_range=(0, 100), y_dim_range=(-50, 50), se
     return df
 
 
+def get_coords_dict():
+    out = {
+        "planetlab": coords_PLANETLAB(),
+        "king": coords_KING(),
+        "fit": coords_fit()
+    }
+    return out
+
+
 def add_cluster_labels(df, opt_k=None, kmin=2, kmax=30, kseed=20):
-    print("Adding cluster labels")
     coords = df[["x", "y"]]
     sil = []
 
     if not opt_k:
         # dissimilarity would not be defined for a single cluster, thus, minimum number of clusters should be 2
         for k in range(kmin, kmax + 1):
-            if k % 5 == 0:
-                print(k)
+            # if k % 5 == 0:
+            #    print(k)
             kmeans = KMeans(n_clusters=k, n_init='auto', random_state=kseed).fit(coords)
             labels = kmeans.labels_
             sil.append(silhouette_score(coords, labels, metric='euclidean'))
 
-        opt_k = get_max_by_thresh(sil, 0.00)
+        opt_k = np.argmax(sil)
+        opt_k = kmin + opt_k
         print("Optimal k is", opt_k)
 
     cluster_alg = KMeans(n_clusters=opt_k, n_init='auto').fit(coords)
@@ -137,3 +146,19 @@ def setup_topology(df, H, max_resources, c_capacity=50, weights=(1, 1), dist="lo
 
     df, slot_columns = add_capacity_columns(df, H, max_resources, c_capacity, len(coords))
     return df, c_coords, base_col, slot_columns
+
+
+def create_topologies_from_dict(topology_dict, H, max_resources, c_capacity=50, weights=(1, 1), dist="lognorm",
+                                with_clustering=True, kmin=2, kmax=30, kseed=20):
+    out = {}
+    for k, df in topology_dict.items():
+        print("Creating df for", k)
+        df, c_coords, base_col, slot_columns = setup_topology(df, H, max_resources, c_capacity=c_capacity,
+                                                              weights=weights, dist=dist)
+        out[k] = df, c_coords, base_col, slot_columns
+        if with_clustering:
+            df, centroids, opt_k, sil = add_cluster_labels(df, kmin=kmin, kmax=kmax, kseed=kseed)
+            out[k] = df, c_coords, base_col, slot_columns, centroids, opt_k, sil
+
+    print("Done")
+    return out

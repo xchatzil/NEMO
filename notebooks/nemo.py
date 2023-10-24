@@ -10,10 +10,10 @@ from util import evaluate
 
 
 class NemoSolver:
-    def __init__(self, df_coords, coords, centroids, weighting="spring", threshold=0.1, iterations=100,
+    def __init__(self, df_coords, centroids, weighting="spring", threshold=0.1, iterations=100,
                  max_levels=20, weight_col="weight"):
         self.df_nemo = df_coords.copy()
-        self.coords = coords
+        self.coords = self.df_nemo[["x", "y"]].to_numpy()
         self.weighting = weighting
         self.req_col = weight_col
         self.threshold = threshold
@@ -89,7 +89,7 @@ class NemoSolver:
             opt_dict_iter[level] = opt_dict
 
         # returns result df, and dict with the local optima without replication
-        return self.expand_df(slot_col), opt_dict_iter
+        return self.expand_df(slot_col), opt_dict_iter, resource_limit
 
     def merge_clusters(self, cluster_head_dict, cluster_heads):
         cluster_dict = {}
@@ -247,21 +247,22 @@ def calc_routes(df):
     return df
 
 
-def evaluate_nemo(prim_df, coords, centroids, slot_cols, max_levels=20, iterations=100, weighting="spring",
+def evaluate_nemo(prim_df, centroids, slot_cols, max_levels=20, iterations=100, weighting="spring",
                   weight_col="weight", show_eval=True):
     df_dict = {}
-    opt_dicts = {}
+    opt_dict = {}
+    limits_dict = {}
+
     eval_matrix_slots = {}
 
     for slot_col in slot_cols:
         print("Starting nemo for", slot_col, "with", weighting, "and", weight_col, "and level:", max_levels)
-        nemo = NemoSolver(prim_df, coords, centroids, iterations=iterations, weighting=weighting,
+        nemo = NemoSolver(prim_df, centroids, iterations=iterations, weighting=weighting,
                           max_levels=max_levels, weight_col=weight_col)
-        df_dict[slot_col], opt_dicts[slot_col] = nemo.nemo(slot_col)
+        df_dict[slot_col], opt_dict[slot_col], limits_dict[slot_col] = nemo.nemo(slot_col)
         if show_eval:
             print("Evaluating for", slot_col)
+            coords = prim_df[["x", "y"]].to_numpy()
             eval_matrix_slots[slot_col] = evaluate(df_dict[slot_col], coords)
-        else:
-            eval_matrix_slots[slot_col] = None
 
-    return eval_matrix_slots, df_dict, opt_dicts
+    return eval_matrix_slots, df_dict, opt_dict, limits_dict
