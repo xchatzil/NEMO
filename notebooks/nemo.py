@@ -11,7 +11,7 @@ from util import evaluate
 
 class NemoSolver:
     def __init__(self, df_coords, centroids, weighting="spring", threshold=0.1, iterations=100,
-                 max_levels=20, weight_col="weight"):
+                 max_levels=20, weight_col="weight", step_scale=0.5):
         self.df_nemo = df_coords.copy()
         self.coords = self.df_nemo[["x", "y"]].to_numpy()
         self.weighting = weighting
@@ -19,6 +19,7 @@ class NemoSolver:
         self.threshold = threshold
         self.opt_iterations = iterations
         self.max_levels = max_levels
+        self.step_scale = step_scale
 
         self.device_number = len(df_coords.index)
         self.latency_hist = np.zeros(self.device_number)
@@ -134,7 +135,7 @@ class NemoSolver:
         # calculate logical opt for the operator in the continuous space
         s1 = self.df_nemo.iloc[upstream_nodes][["x", "y"]].mean()
         s2 = self.df_nemo.iloc[downstream_node][["x", "y"]].mean()
-        opt = util.calc_opt(s1, s2, w1=0.1)
+        opt = util.calc_opt(s1, s2, w=self.step_scale)
 
         # preform knn search
         # print("Performing knn for", [opt[0], opt[1]], "with k=", k)
@@ -248,7 +249,7 @@ def calc_routes(df):
 
 
 def evaluate_nemo(prim_df, centroids, slot_cols, max_levels=20, iterations=100, weighting="spring",
-                  weight_col="weight", show_eval=True):
+                  weight_col="weight", show_eval=True, step_scale=0.1):
     df_dict = {}
     opt_dict = {}
     limits_dict = {}
@@ -258,7 +259,7 @@ def evaluate_nemo(prim_df, centroids, slot_cols, max_levels=20, iterations=100, 
     for slot_col in slot_cols:
         print("Starting nemo for", slot_col, "with", weighting, "and", weight_col, "and level:", max_levels)
         nemo = NemoSolver(prim_df, centroids, iterations=iterations, weighting=weighting,
-                          max_levels=max_levels, weight_col=weight_col)
+                          max_levels=max_levels, weight_col=weight_col, step_scale=step_scale)
         df_dict[slot_col], opt_dict[slot_col], limits_dict[slot_col] = nemo.nemo(slot_col)
         if show_eval:
             print("Evaluating for", slot_col)

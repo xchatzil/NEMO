@@ -7,12 +7,15 @@ from matplotlib.transforms import Bbox
 lcl = "black"
 cmarker = "p"
 ccolor = lcl
+lnode_marker = "*"
+ch_marker = "+"
+
 coordinator_label = Line2D([], [], color=lcl, marker=cmarker, linestyle='None', label='sink')
 worker_label = Line2D([], [], color="grey", marker='o', linestyle='None', label='sources', markersize=4)
 reassigned_label = Line2D([0, 1], [0, 1], linestyle='--', color=lcl, label='reassigned')
 centroid_label = Line2D([], [], color="grey", marker='o', linestyle='None', label='centroid')
-ch_label = Line2D([], [], color=lcl, marker='x', linestyle='None', label='cluster head')
-log_opt_label = Line2D([], [], color=lcl, marker='+', linestyle='None', label='optimal cluster head')
+ch_label = Line2D([], [], color=lcl, marker=ch_marker, linestyle='None', label='physical node')
+log_opt_label = Line2D([], [], color=lcl, marker=lnode_marker, linestyle='None', label='virtual node')
 
 
 def get_max_by_thresh(elements, threshold):
@@ -26,10 +29,11 @@ def get_max_by_thresh(elements, threshold):
     return max_k
 
 
-def calc_opt(point1, point2, w1=0.5, w2=0.5, k=0.1, num_iterations=100):
+def calc_opt(point1, point2, w=0.5, k=0.1, num_iterations=100):
     # Convert input points to numpy arrays
     point1 = np.array(point1, dtype=np.float64)
     point2 = np.array(point2, dtype=np.float64)
+    w2 = 1 - w
 
     for _ in range(num_iterations):
         # Calculate the displacement vector from point1 to point2
@@ -39,7 +43,7 @@ def calc_opt(point1, point2, w1=0.5, w2=0.5, k=0.1, num_iterations=100):
         force_vector = k * displacement
 
         # Update the positions of point1 and point2 based on the force
-        point1 += np.round(w1 * force_vector, 2)
+        point1 += np.round(w * force_vector, 2)
         point2 -= np.round(w2 * force_vector, 2)
 
     # The optimal point location is the average of point1 and point2
@@ -172,7 +176,7 @@ def plot(ax, df_origin, df_plcmnt, colors, lval=0.2, leg_size=8, plot_centroids=
             for parent in parents:
                 if parent != 0:
                     point2 = df_origin.iloc[parent][["x", "y"]]
-                    ax.scatter(point2["x"], point2["y"], s=50, color=colors[cluster], zorder=10, marker="x",
+                    ax.scatter(point2["x"], point2["y"], s=50, color=colors[cluster], zorder=10, marker=ch_marker,
                                label="agg. point")
 
                     x_values = [point1["x"], point2["x"]]
@@ -183,13 +187,13 @@ def plot(ax, df_origin, df_plcmnt, colors, lval=0.2, leg_size=8, plot_centroids=
         for parent in parents:
             # point 1 -> parent
             point1 = df_origin.iloc[parent][["x", "y"]]
-            ax.scatter(point1["x"], point1["y"], s=50, color=colors[cluster], zorder=10, marker="x",
+            ax.scatter(point1["x"], point1["y"], s=50, color=colors[cluster], zorder=10, marker=ch_marker,
                        label="agg. point")
 
             # point 2 -> parent of parent
             parent_parents = df_plcmnt[df_plcmnt["oindex"] == parent][["parent"]]["parent"].unique()
             point2 = df_origin.iloc[parent_parents][["x", "y"]]
-            ax.scatter(point2["x"], point2["y"], s=50, color=colors[cluster], zorder=10, marker="x",
+            ax.scatter(point2["x"], point2["y"], s=50, color=colors[cluster], zorder=10, marker=ch_marker,
                        label="agg. point")
 
             for pp in parent_parents:
@@ -222,7 +226,7 @@ def plot_optimum(ax, df_origin, opt_dicts, colors, lval=0.2, leg_size=8, plot_ce
         ax.scatter(df_cluster["x"], df_cluster["y"], s=10, color=lighten_color(colors[cluster], lval), zorder=-1)
 
         point2 = opt_dicts[1][cluster]
-        ax.scatter(point2[0], point2[1], s=50, color=colors[cluster], zorder=10, marker="+",
+        ax.scatter(point2[0], point2[1], s=50, color=colors[cluster], zorder=10, marker=lnode_marker,
                    label="agg. point")
 
         if plot_centroid:
