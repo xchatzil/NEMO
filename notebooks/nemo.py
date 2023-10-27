@@ -3,6 +3,7 @@ import sys
 import numpy as np
 import math
 import pandas as pd
+from sklearn.cluster import KMeans
 
 import util
 from resource_reassignment import get_cluster_heads
@@ -10,24 +11,28 @@ from util import evaluate
 
 
 class NemoSolver:
-    def __init__(self, df_coords, centroids, weighting="spring", threshold=0.1, iterations=100,
-                 max_levels=20, weight_col="weight", step_scale=0.5):
+    def __init__(self, df_coords, capacity_col, weight_col, step_size=0.5, merge_factor=0.5, max_levels=20):
         self.df_nemo = df_coords.copy()
         self.coords = self.df_nemo[["x", "y"]].to_numpy()
-        self.weighting = weighting
         self.req_col = weight_col
-        self.threshold = threshold
-        self.opt_iterations = iterations
-        self.max_levels = max_levels
-        self.step_scale = step_scale
+        self.step_size = step_size
+        self.merge_factor = merge_factor
 
         self.device_number = len(df_coords.index)
         self.latency_hist = np.zeros(self.device_number)
         self.received_packets_hist = np.zeros(self.device_number)
 
+        # levels
+        self.max_levels = max_levels
+        self.df_nemo["level"] = 0
+
         # labels
         self.parent_col = "parent"
         self.av_col = "free_slots"
+        self.capacity_col = capacity_col
+
+        # resources
+        self.df_nemo[self.av_col] = self.df_nemo[self.capacity_col]
 
         # assignments
         self.c_coords = self.df_nemo[self.df_nemo["type"] == "coordinator"][["x", "y"]].values[0]
@@ -35,7 +40,6 @@ class NemoSolver:
 
         self.unique_clusters = self.df_nemo[self.df_nemo['cluster'] >= 0]['cluster'].unique().tolist()
         self.num_clusters = len(self.unique_clusters)
-        self.centroids = centroids
 
         self.df_nemo["oindex"] = self.df_nemo.index
         self.knn_nodes = set(range(1, len(self.df_nemo)))
@@ -44,9 +48,7 @@ class NemoSolver:
         self.df_nemo[self.parent_col] = [[]] * len(self.coords)
         self.df_nemo.at[0, "parent"] = [(0, 0)]
 
-    def nemo(self, slot_col):
-        self.df_nemo[self.av_col] = self.df_nemo[slot_col]
-        self.df_nemo["level"] = 0
+    def nemo(self):
         current_cluster_heads = dict()
         opt_dict_iter = dict()
         level = 0
@@ -77,10 +79,14 @@ class NemoSolver:
             else:
                 new_cluster_heads = {}
                 if level >= 1:
-                    current_cluster_heads = self.merge_clusters(current_cluster_heads, all_chs)
+                    # print(current_cluster_heads)
+                    current_cluster_heads = self.merge_clusters_kmeans(current_cluster_heads, all_chs)
+
                 for cluster in current_cluster_heads.keys():
-                    upstream_nodes = current_cluster_heads[cluster]
-                    new_cluster_heads[cluster], opt = self.balance_load(list(upstream_nodes), [downstream_node])
+                    upstream_nodes = list(current_cluster_heads[cluster])
+                    # idx_min = self.df_nemo.loc[upstream_nodes, "latency"].idxmin()
+                    # opt = self.df_nemo.loc[idx_min, ["x", "y"]].to_numpy()
+                    new_cluster_heads[cluster], opt = self.balance_load(upstream_nodes, [downstream_node], opt=None)
                     opt_dict[cluster] = opt
                     if opt is None:
                         resource_limit = True
@@ -90,9 +96,10 @@ class NemoSolver:
             opt_dict_iter[level] = opt_dict
 
         # returns result df, and dict with the local optima without replication
-        return self.expand_df(slot_col), opt_dict_iter, resource_limit
+        return self.expand_df(self.capacity_col), opt_dict_iter, resource_limit
 
-    def merge_clusters(self, cluster_head_dict, cluster_heads):
+    def merge_clusters_knn(self, cluster_head_dict, cluster_heads):
+        # merge two closest clusters with each other
         cluster_dict = {}
         mapping_dict = {}
 
@@ -127,15 +134,37 @@ class NemoSolver:
 
         return out
 
-    def balance_load(self, upstream_nodes, downstream_node):
+    def merge_clusters_kmeans(self, cluster_head_dict, cluster_heads):
+        idxs = list(set(cluster_heads))
+        coords = self.df_nemo.loc[idxs, ["x", "y"]]
+        out = {}
+        num_clusters = min(len(cluster_head_dict.keys()), len(idxs))
+        num_clusters = max(int(self.merge_factor * num_clusters), 1)
+
+        cluster_alg = KMeans(n_clusters=num_clusters, n_init='auto').fit(coords)
+        labels = cluster_alg.labels_
+
+        for i, idx in enumerate(idxs):
+            l = labels[i]
+            if l in out:
+                out[l].append(idx)
+            else:
+                out[l] = [idx]
+
+        return out
+
+    def balance_load(self, upstream_nodes, downstream_node, opt=None):
         intersection = list(set(upstream_nodes).intersection(downstream_node))
         if intersection:
             print("Intersection found in balance load", intersection)
 
-        # calculate logical opt for the operator in the continuous space
-        s1 = self.df_nemo.iloc[upstream_nodes][["x", "y"]].mean()
-        s2 = self.df_nemo.iloc[downstream_node][["x", "y"]].mean()
-        opt = util.calc_opt(s1, s2, w=self.step_scale)
+        if opt is None:
+            # calculate logical opt for the operator in the continuous space
+            s1 = self.df_nemo.iloc[upstream_nodes][["x", "y"]].mean()
+            s2 = self.df_nemo.iloc[downstream_node][["x", "y"]].mean()
+            w = self.step_size
+            # w = len(upstream_nodes) / len(downstream_node)
+            opt = util.calc_opt(s1, s2, w=w)
 
         # preform knn search
         # print("Performing knn for", [opt[0], opt[1]], "with k=", k)
@@ -154,6 +183,7 @@ class NemoSolver:
             print("Topology does not contain enough available resources " + str(req) + "/" + str(sum_avs))
             return upstream_nodes, None
 
+        upstream_nodes = self.df_nemo.loc[upstream_nodes, "latency"].sort_values(ascending=False).index.tolist()
         parents, failed = self.assign_resources(upstream_nodes, list(idx_order))
         if failed:
             return upstream_nodes, None
@@ -179,7 +209,7 @@ class NemoSolver:
 
             if av_resources <= res_threshold:
                 idx = to_idxs.pop(0)
-                self.knn_nodes.remove(idx)
+                self.knn_nodes.remove(parent_idx)
                 continue
 
             if tmp:
@@ -189,10 +219,6 @@ class NemoSolver:
                 child_idx = from_idxs[0]
                 required = self.df_nemo.loc[child_idx, self.req_col]
                 split = False
-
-            if child_idx == parent_idx:
-                idx = to_idxs.pop(0)
-                self.knn_nodes.remove(idx)
 
             if av_resources >= required:
                 # update values of the cluster head
@@ -206,16 +232,15 @@ class NemoSolver:
                 tmp = (child_idx, remaining_required)
 
             parents.add(parent_idx)
+
         return parents, failed
 
     def create_mapping(self, child_idx, parent_idx, mapped_resources, split=False):
         parents = self.df_nemo.at[child_idx, self.parent_col]
-        for p, weight in parents:
-            if p == parent_idx:
-                return
 
         # update parent resources
         self.df_nemo.at[parent_idx, self.av_col] = self.df_nemo.at[parent_idx, self.av_col] - mapped_resources
+
         # update routes of the added node
         if split:
             self.df_nemo.at[child_idx, self.parent_col] = self.df_nemo.at[child_idx, self.parent_col] + [
@@ -248,22 +273,24 @@ def calc_routes(df):
     return df
 
 
-def evaluate_nemo(prim_df, centroids, slot_cols, max_levels=20, iterations=100, weighting="spring",
-                  weight_col="weight", show_eval=True, step_scale=0.1):
+def evaluate_nemo(prim_df, capacity_cols, weight_col, max_levels=20, step_size=0.5, merge_factor=0.5, with_eval=True):
     df_dict = {}
     opt_dict = {}
     limits_dict = {}
-
     eval_matrix_slots = {}
 
-    for slot_col in slot_cols:
-        print("Starting nemo for", slot_col, "with", weighting, "and", weight_col, "and level:", max_levels)
-        nemo = NemoSolver(prim_df, centroids, iterations=iterations, weighting=weighting,
-                          max_levels=max_levels, weight_col=weight_col, step_scale=step_scale)
-        df_dict[slot_col], opt_dict[slot_col], limits_dict[slot_col] = nemo.nemo(slot_col)
-        if show_eval:
-            print("Evaluating for", slot_col)
+    for capacity_col in capacity_cols:
+        print("Starting nemo for: c=" + str(capacity_col) + ", w=" + str(weight_col) + ", l=" + str(max_levels)
+              + ", step_size=" + str(step_size) + ", merge_factor=" + str(merge_factor))
+        nemo = NemoSolver(prim_df, capacity_col, weight_col, max_levels=max_levels, step_size=step_size,
+                          merge_factor=merge_factor)
+        df_dict[capacity_col], opt_dict[capacity_col], limits_dict[capacity_col] = nemo.nemo()
+        if with_eval:
+            print("Evaluating for", capacity_col)
             coords = prim_df[["x", "y"]].to_numpy()
-            eval_matrix_slots[slot_col] = evaluate(df_dict[slot_col], coords)
+            eval_matrix_slots[capacity_col] = evaluate(df_dict[capacity_col], coords)
 
-    return eval_matrix_slots, df_dict, opt_dict, limits_dict
+    if with_eval:
+        return eval_matrix_slots, df_dict, opt_dict, limits_dict
+    else:
+        return df_dict, opt_dict, limits_dict

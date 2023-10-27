@@ -3,6 +3,7 @@ import seaborn as sns
 import pandas as pd
 from matplotlib.lines import Line2D
 from matplotlib.transforms import Bbox
+import math, heapq
 
 lcl = "black"
 cmarker = "p"
@@ -27,6 +28,56 @@ def get_max_by_thresh(elements, threshold):
             return i
         i += i
     return max_k
+
+
+def euclidean_distance(point1, point2):
+    """
+    Calculate the Euclidean distance between two points represented as tuples.
+    """
+    return math.sqrt((point1[0] - point2[0]) ** 2 + (point1[1] - point2[1]) ** 2)
+
+
+def create_groups(coordinates, n):
+    """
+    Create groups of n closest points such that no index is alone in a group.
+
+    Args:
+        coordinates (list of tuples): List of tuples representing coordinates.
+        n (int): Number of closest points per group.
+
+    Example:
+        coordinates = [(1, 2), (3, 4), (5, 6), (7, 8), (9, 10)], n = 3
+        Result: [[0, 1, 2], [3, 4]]
+
+    Returns:
+        list of lists: List of groups where each group is a list of indices.
+    """
+    num_points = len(coordinates)
+    groups = []
+    visited = set()
+
+    for i in range(num_points):
+        if i not in visited:
+            group = [i]
+            visited.add(i)
+
+            # Create a min-heap for storing (distance, index) pairs
+            min_heap = [(euclidean_distance(coordinates[i], coordinates[j]), j) for j in range(num_points) if j != i]
+
+            while len(group) < n:
+                if not min_heap:
+                    break
+
+                # Get the closest point from the heap
+                distance, closest_point = heapq.heappop(min_heap)
+
+                # If the closest point is unvisited, add it to the group
+                if closest_point not in visited:
+                    group.append(closest_point)
+                    visited.add(closest_point)
+
+            groups.append(group)
+    return groups
 
 
 def calc_opt(point1, point2, w=0.5, k=0.1, num_iterations=100):
