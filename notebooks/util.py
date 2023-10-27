@@ -8,7 +8,7 @@ import math, heapq
 lcl = "black"
 cmarker = "p"
 ccolor = lcl
-lnode_marker = "*"
+lnode_marker = "^"
 ch_marker = "+"
 
 coordinator_label = Line2D([], [], color=lcl, marker=cmarker, linestyle='None', label='sink')
