@@ -92,7 +92,8 @@ def get_coords_dict():
     out = {
         "planetlab": coords_PLANETLAB(),
         "king": coords_KING(),
-        "fit": coords_fit()
+        "fit": coords_fit(),
+        "atlas": coords_ripe_atlas()
     }
     return out
 
