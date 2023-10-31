@@ -46,7 +46,6 @@ class NemoSolver:
 
         # cluster head id
         self.df_nemo[self.parent_col] = [[]] * len(self.coords)
-        self.df_nemo.at[0, "parent"] = [(0, 0)]
 
     def nemo(self):
         current_cluster_heads = dict()
@@ -97,6 +96,28 @@ class NemoSolver:
 
         # returns result df, and dict with the local optima without replication
         return self.expand_df(self.capacity_col), opt_dict_iter, resource_limit
+
+    def nemo_reoptimize(self, upstream_nodes, downstream_nodes, opt=None):
+        resource_limit = False
+        new_cluster_heads = set()
+
+        for downstream_node in downstream_nodes:
+            av = 0
+            load = 1
+
+            while av < load and not resource_limit:
+                # print("av", av, "load", load, "ch", new_cluster_heads)
+                upstream_nodes, opt = self.balance_load(upstream_nodes, [downstream_node], opt=opt)
+                new_cluster_heads.update(upstream_nodes)
+                upstream_nodes = list(upstream_nodes)
+
+                load = self.df_nemo.loc[upstream_nodes, "weight"].sum()
+                av = self.df_nemo.loc[downstream_node, self.av_col].sum()
+
+                if opt is None:
+                    resource_limit = True
+
+        return new_cluster_heads
 
     def merge_clusters_knn(self, cluster_head_dict, cluster_heads):
         # merge two closest clusters with each other
