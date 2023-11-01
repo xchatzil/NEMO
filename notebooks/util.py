@@ -4,12 +4,13 @@ import pandas as pd
 from matplotlib.lines import Line2D
 from matplotlib.transforms import Bbox
 import math, heapq
+from scipy.spatial import cKDTree
 
 lcl = "black"
-cmarker = "p"
+cmarker = "D"
 ccolor = lcl
 lnode_marker = "^"
-ch_marker = "+"
+ch_marker = "x"
 
 coordinator_label = Line2D([], [], color=lcl, marker=cmarker, linestyle='None', label='sink')
 worker_label = Line2D([], [], color="grey", marker='o', linestyle='None', label='sources', markersize=4)
@@ -208,9 +209,21 @@ def get_color_list(num_colors):
     return colors_hex, light_colors, colors
 
 
-def plot(ax, df_origin, df_plcmnt, colors, lval=0.2, leg_size=8, plot_centroids=False, plot_lines=False):
-    line_style = "--"
+def plot_with_single_color(*args, **kwargs):
+    args = list(args)
+    length = args[1]["cluster"].nunique()
+    color = args[3]
+    colors = np.full(length, color)
+    args[3] = colors
+    args = tuple(args)
+    plot(*args, **kwargs)
+
+
+def plot(ax, df_origin, df_plcmnt, colors, lval=0.2, symbol_size=100, leg_size=8, axis_label_size=20,
+         line_style="-", line_width=0.8, highlight_color=None, plot_centroids=False, plot_lines=False, opt_dict=None):
+    handles = [coordinator_label, worker_label, ch_label]
     clusters = df_origin["cluster"].unique()
+    levels = df_plcmnt.loc[0, "level"]
 
     for cluster in clusters:
         # plot points
@@ -222,29 +235,45 @@ def plot(ax, df_origin, df_plcmnt, colors, lval=0.2, leg_size=8, plot_centroids=
         parents = df_cluster["parent"].unique()
         if plot_centroids:
             point1 = df_cluster[["x", "y"]].mean()
-            ax.scatter(point1["x"], point1["y"], s=50, color=colors[cluster], zorder=10, label="centroid")
+            ax.scatter(point1["x"], point1["y"], s=symbol_size, color=colors[cluster], zorder=10, label="centroid")
 
             for parent in parents:
                 if parent != 0:
                     point2 = df_origin.iloc[parent][["x", "y"]]
-                    ax.scatter(point2["x"], point2["y"], s=50, color=colors[cluster], zorder=10, marker=ch_marker,
-                               label="agg. point")
+                    level = df_plcmnt[df_plcmnt["oindex"] == parent]["level"].to_numpy()[0]
+
+                    child = df_plcmnt[df_plcmnt["parent"] == parent].iloc[0]["oindex"]
+                    is_leaf = df_plcmnt[df_plcmnt["parent"] == child].empty
 
                     x_values = [point1["x"], point2["x"]]
                     y_values = [point1["y"], point2["y"]]
-                    if plot_lines:
-                        ax.plot(x_values, y_values, "-", zorder=3, color=colors[cluster])
+                    if plot_lines and (level == 1 or is_leaf):
+                        ax.plot(x_values, y_values, "-", linewidth=line_width, zorder=3, color=colors[cluster])
 
         for parent in parents:
             # point 1 -> parent
             point1 = df_origin.iloc[parent][["x", "y"]]
-            ax.scatter(point1["x"], point1["y"], s=50, color=colors[cluster], zorder=10, marker=ch_marker,
+            level = df_plcmnt[df_plcmnt["oindex"] == parent]["level"].max()
+            if highlight_color is not None and level == levels - 1:
+                color = highlight_color
+                zorder = 11
+            else:
+                color = colors[cluster]
+                zorder = 10
+            ax.scatter(point1["x"], point1["y"], s=symbol_size, color=color, zorder=zorder, marker=ch_marker,
                        label="agg. point")
 
             # point 2 -> parent of parent
             parent_parents = df_plcmnt[df_plcmnt["oindex"] == parent][["parent"]]["parent"].unique()
             point2 = df_origin.iloc[parent_parents][["x", "y"]]
-            ax.scatter(point2["x"], point2["y"], s=50, color=colors[cluster], zorder=10, marker=ch_marker,
+            if highlight_color is not None and level == levels - 2:
+                color = highlight_color
+                zorder = 11
+            else:
+                color = colors[cluster]
+                zorder = 10
+
+            ax.scatter(point2["x"], point2["y"], s=symbol_size, color=color, zorder=zorder, marker=ch_marker,
                        label="agg. point")
 
             for pp in parent_parents:
@@ -253,17 +282,31 @@ def plot(ax, df_origin, df_plcmnt, colors, lval=0.2, leg_size=8, plot_centroids=
                 x_values = [point1["x"], point2["x"]]
                 y_values = [point1["y"], point2["y"]]
                 if plot_lines:
-                    ax.plot(x_values, y_values, line_style, zorder=3, color=colors[cluster])
+                    ax.plot(x_values, y_values, line_style, linewidth=line_width, zorder=3, color=colors[cluster])
 
-    ax.scatter(df_plcmnt.loc[0, "x"], df_plcmnt.loc[0, "y"], s=100, color=ccolor, marker=cmarker, zorder=10)
+    if opt_dict is not None:
+        cl_dict = opt_dict[len(opt_dict)]
+        for cl_label, opt_coords in cl_dict.items():
+            if highlight_color is not None:
+                color = highlight_color
+            else:
+                color = colors[cl_label]
+
+            ax.scatter(opt_coords[0], opt_coords[1], s=symbol_size, color=color, zorder=15, marker=lnode_marker,
+                       label="agg. point")
+
+    ax.scatter(df_origin.loc[0, "x"], df_origin.loc[0, "y"], s=2 * symbol_size, color=ccolor, marker=cmarker, zorder=20)
 
     ax.set_xlabel('$network$ $coordinate_1$')
     ax.set_ylabel('$network$ $coordinate_2$')
+    ax.xaxis.label.set_size(axis_label_size)
+    ax.yaxis.label.set_size(axis_label_size)
 
     if plot_centroids:
-        handles = [coordinator_label, worker_label, centroid_label, ch_label]
-    else:
-        handles = [coordinator_label, worker_label, ch_label]
+        handles.append(centroid_label)
+
+    if opt_dict is not None:
+        handles.append(log_opt_label)
 
     ax.legend(handles=handles, loc="upper left",
               bbox_to_anchor=(0, 1), prop={'size': leg_size})

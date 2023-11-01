@@ -1,12 +1,10 @@
 from scipy.spatial import cKDTree
 import sys
 import numpy as np
-import math
 import pandas as pd
 from sklearn.cluster import KMeans
 
 import util
-from resource_reassignment import get_cluster_heads
 from util import evaluate
 
 
@@ -85,7 +83,11 @@ class NemoSolver:
                     upstream_nodes = list(current_cluster_heads[cluster])
                     # idx_min = self.df_nemo.loc[upstream_nodes, "latency"].idxmin()
                     # opt = self.df_nemo.loc[idx_min, ["x", "y"]].to_numpy()
-                    new_cluster_heads[cluster], opt = self.balance_load(upstream_nodes, [downstream_node], opt=None)
+                    if len(upstream_nodes) > 1:
+                        new_cluster_heads[cluster], opt = self.balance_load(upstream_nodes, [downstream_node], opt=None)
+                    else:
+                        opt = self.df_nemo.loc[upstream_nodes[0], ["x", "y"]].to_numpy()
+                        new_cluster_heads[cluster], opt = upstream_nodes, opt
                     opt_dict[cluster] = opt
                     if opt is None:
                         resource_limit = True
@@ -119,42 +121,6 @@ class NemoSolver:
 
         return new_cluster_heads
 
-    def merge_clusters_knn(self, cluster_head_dict, cluster_heads):
-        # merge two closest clusters with each other
-        cluster_dict = {}
-        mapping_dict = {}
-
-        if len(cluster_heads) < 2:
-            return cluster_head_dict
-
-        for key, value_set in cluster_head_dict.items():
-            for element in value_set:
-                cluster_dict[element] = key
-
-        df_knn = self.df_nemo.iloc[list(cluster_heads)]
-        full_kdtree = cKDTree(df_knn[["x", "y"]])
-        out = cluster_head_dict.copy()
-
-        for cluster, nodes in cluster_head_dict.items():
-            if len(nodes) == 1 and len(out[cluster]) == 1:
-                node = list(nodes)[0]
-                opt = self.df_nemo.loc[node, ["x", "y"]].tolist()
-                idx_order = full_kdtree.query([opt[0], opt[1]], k=2)[1]
-                idx_order = df_knn['oindex'].iloc[idx_order].tolist()[1]
-                new_cluster = cluster_dict[idx_order]
-
-                if cluster in out and cluster != new_cluster:
-                    del out[cluster]
-
-                while new_cluster in mapping_dict and cluster != new_cluster:
-                    new_cluster = mapping_dict[new_cluster]
-
-                if cluster != new_cluster:
-                    mapping_dict[cluster] = new_cluster
-                    out[new_cluster].update(nodes)
-
-        return out
-
     def merge_clusters_kmeans(self, cluster_head_dict, cluster_heads):
         idxs = list(set(cluster_heads))
         coords = self.df_nemo.loc[idxs, ["x", "y"]]
@@ -162,7 +128,7 @@ class NemoSolver:
         num_clusters = min(len(cluster_head_dict.keys()), len(idxs))
         num_clusters = max(int(self.merge_factor * num_clusters), 1)
 
-        cluster_alg = KMeans(n_clusters=num_clusters, n_init='auto').fit(coords)
+        cluster_alg = KMeans(n_clusters=num_clusters, n_init='auto', random_state=42).fit(coords)
         labels = cluster_alg.labels_
 
         for i, idx in enumerate(idxs):
