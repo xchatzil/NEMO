@@ -4,7 +4,7 @@ import pandas as pd
 from matplotlib.lines import Line2D
 from matplotlib.transforms import Bbox
 import math, heapq
-from scipy.spatial import cKDTree
+from scipy.spatial import cKDTree, voronoi_plot_2d, Voronoi
 
 lcl = "black"
 cmarker = "D"
@@ -219,7 +219,7 @@ def plot_with_single_color(*args, **kwargs):
     plot(*args, **kwargs)
 
 
-def plot(ax, df_origin, df_plcmnt, colors, lval=0.2, symbol_size=100, leg_size=8, axis_label_size=20,
+def plot(ax, df_origin, df_plcmnt, colors, lval=0.2, symbol_size=100, scale_fac=0.25, leg_size=12, axis_label_size=20,
          line_style="-", line_width=0.8, highlight_color=None, plot_centroids=False, plot_lines=False, opt_dict=None):
     handles = [coordinator_label, worker_label, ch_label]
     clusters = df_origin["cluster"].unique()
@@ -228,7 +228,7 @@ def plot(ax, df_origin, df_plcmnt, colors, lval=0.2, symbol_size=100, leg_size=8
     for cluster in clusters:
         # plot points
         dfc = df_origin[df_origin["cluster"] == cluster]
-        ax.scatter(dfc["x"], dfc["y"], s=10, color=lighten_color(colors[cluster], lval), zorder=-1)
+        ax.scatter(dfc["x"], dfc["y"], s=scale_fac * symbol_size, color=lighten_color(colors[cluster], lval), zorder=-1)
 
         df_cluster = df_plcmnt[df_plcmnt["cluster"] == cluster]
 
@@ -297,10 +297,8 @@ def plot(ax, df_origin, df_plcmnt, colors, lval=0.2, symbol_size=100, leg_size=8
 
     ax.scatter(df_origin.loc[0, "x"], df_origin.loc[0, "y"], s=2 * symbol_size, color=ccolor, marker=cmarker, zorder=20)
 
-    ax.set_xlabel('$network$ $coordinate_1$')
-    ax.set_ylabel('$network$ $coordinate_2$')
-    ax.xaxis.label.set_size(axis_label_size)
-    ax.yaxis.label.set_size(axis_label_size)
+    ax.set_xlabel('$network$ $coordinate_1$', fontsize=axis_label_size)
+    ax.set_ylabel('$network$ $coordinate_2$', fontsize=axis_label_size)
 
     if plot_centroids:
         handles.append(centroid_label)
@@ -312,28 +310,31 @@ def plot(ax, df_origin, df_plcmnt, colors, lval=0.2, symbol_size=100, leg_size=8
               bbox_to_anchor=(0, 1), prop={'size': leg_size})
 
 
-def plot_optimum(ax, df_origin, opt_dicts, colors, lval=0.2, leg_size=8, plot_centroid=False, plot_lines=False):
+def plot_optimum(ax, df_origin, opt_dicts, colors, lval=0.2, symbol_size=100, scale_fac=0.25, leg_size=12,
+                 axis_label_size=20, plot_centroid=False, plot_lines=False):
     ccords = df_origin.loc[0, ["x", "y"]].tolist()
     clusters = df_origin["cluster"][df_origin["cluster"] >= 0].unique()
     for cluster in clusters:
         df_cluster = df_origin[df_origin["cluster"] == cluster]
-        ax.scatter(df_cluster["x"], df_cluster["y"], s=10, color=lighten_color(colors[cluster], lval), zorder=-1)
+        ax.scatter(df_cluster["x"], df_cluster["y"], s=scale_fac * symbol_size,
+                   color=lighten_color(colors[cluster], lval),
+                   zorder=-1)
 
         point2 = opt_dicts[1][cluster]
-        ax.scatter(point2[0], point2[1], s=50, color=colors[cluster], zorder=10, marker=lnode_marker,
+        ax.scatter(point2[0], point2[1], s=symbol_size, color=colors[cluster], zorder=10, marker=lnode_marker,
                    label="agg. point")
 
         if plot_centroid:
             point1 = df_cluster[["x", "y"]].mean().tolist()
-            ax.scatter(point1[0], point1[1], s=50, color=colors[cluster], zorder=10, label="centroid")
+            ax.scatter(point1[0], point1[1], s=symbol_size, color=colors[cluster], zorder=10, label="centroid")
             if plot_lines:
                 ax.plot([point1[0], point2[0]], [point1[1], point2[1]], "--", zorder=3, color=colors[cluster])
                 ax.plot([point2[0], ccords[0]], [point2[1], ccords[1]], "--", zorder=3, color=colors[cluster])
 
-    ax.scatter(df_origin.loc[0, "x"], df_origin.loc[0, "y"], s=100, color=ccolor, marker=cmarker, zorder=10)
+    ax.scatter(df_origin.loc[0, "x"], df_origin.loc[0, "y"], s=2 * symbol_size, color=ccolor, marker=cmarker, zorder=10)
 
-    ax.set_xlabel('$network$ $coordinate_1$')
-    ax.set_ylabel('$network$ $coordinate_2$')
+    ax.set_xlabel('$network$ $coordinate_1$', fontsize=axis_label_size)
+    ax.set_ylabel('$network$ $coordinate_2$', fontsize=axis_label_size)
 
     if plot_centroid:
         handles = [coordinator_label, worker_label, centroid_label, log_opt_label]
@@ -343,20 +344,42 @@ def plot_optimum(ax, df_origin, opt_dicts, colors, lval=0.2, leg_size=8, plot_ce
               bbox_to_anchor=(0, 1), prop={'size': leg_size})
 
 
-def plot_topology(ax, df, colors=None, title="Topology"):
-    c_coords = df.loc[0, ["x", "y"]].to_numpy()
+def plot_topology(ax, df, colors=None, plot_voronoi=False, plot_centroid=False, title="Topology", symbol_size=100,
+                  lval=0.2, scale_fac=0.25, centroid_color="grey", point_color="grey", leg_size=12, axis_label_size=20):
+    c_coords = df.loc[0, ["x", "y"]].tolist()
+    clusters = df["cluster"][df["cluster"] >= 0].unique()
 
-    if colors is not None:
-        labels = df["cluster"].to_numpy()
-        df.plot.scatter(ax=ax, x="x", y="y", color=colors[labels], s=df["capacity_" + str(100)] * 0.15)
+    for cluster in clusters:
+        df_cluster = df[df["cluster"] == cluster]
+
+        if colors is not None:
+            ax.scatter(df_cluster["x"], df_cluster["y"], s=scale_fac * symbol_size,
+                       color=lighten_color(colors[cluster], lval), zorder=-1)
+            centroid_color = colors[cluster]
+        else:
+            ax.scatter(df_cluster["x"], df_cluster["y"], s=scale_fac * symbol_size,
+                       color=lighten_color(point_color, lval), zorder=-1)
+
+        if plot_centroid:
+            centroid = df_cluster[["x", "y"]].mean()
+            ax.scatter(centroid["x"], centroid["y"], s=symbol_size, color=centroid_color, zorder=10,
+                       label="centroid")
+
+    if plot_voronoi:
+        centroids = df[df["cluster"] >= 0].groupby("cluster")[["x", "y"]].mean().to_numpy()
+        vor = Voronoi(centroids)
+        voronoi_plot_2d(vor, ax=ax, point_size=symbol_size, color="red", show_vertices=False, show_points=False)
+
+    ax.scatter(c_coords[0], c_coords[1], s=2 * symbol_size, marker=cmarker, color='black')
+
+    if plot_centroid:
+        handles = [coordinator_label, worker_label, centroid_label]
     else:
-        df.plot.scatter(ax=ax, x="x", y="y", c="grey", s=df["capacity_" + str(100)] * 0.15)
+        handles = [coordinator_label, worker_label]
 
-    ax.scatter(c_coords[0], c_coords[1], s=100, marker=cmarker, color='black')
-
-    ax.legend(handles=[coordinator_label, worker_label], loc="upper left", bbox_to_anchor=(0, 1), fontsize=8)
-    ax.set_xlabel('$network$ $coordinate_1$', fontsize=18)
-    ax.set_ylabel('$network$ $coordinate_2$', fontsize=18)
+    ax.legend(handles=handles, loc="upper left", bbox_to_anchor=(0, 1), fontsize=leg_size)
+    ax.set_xlabel('$network$ $coordinate_1$', fontsize=axis_label_size)
+    ax.set_ylabel('$network$ $coordinate_2$', fontsize=axis_label_size)
     ax.set_title(title)
     return ax
 
