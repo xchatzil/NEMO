@@ -88,6 +88,7 @@ class NemoSolver:
                     else:
                         opt = self.df_nemo.loc[upstream_nodes[0], ["x", "y"]].to_numpy()
                         new_cluster_heads[cluster], opt = upstream_nodes, opt
+
                     opt_dict[cluster] = opt
                     if opt is None:
                         resource_limit = True
@@ -99,16 +100,19 @@ class NemoSolver:
         # returns result df, and dict with the local optima without replication
         return self.expand_df(self.capacity_col), opt_dict_iter, resource_limit
 
-    def nemo_reoptimize(self, upstream_nodes, downstream_nodes, opt=None):
+    def nemo_reoptimize(self, old_node, upstream_nodes, downstream_nodes, opt=None):
         resource_limit = False
         new_cluster_heads = set()
+        if old_node in self.knn_nodes:
+            self.knn_nodes.remove(old_node)
 
         for downstream_node in downstream_nodes:
             av = 0
             load = 1
 
             while av < load and not resource_limit:
-                # print("av", av, "load", load, "ch", new_cluster_heads)
+                print("av", av, "load", load, "ch", new_cluster_heads)
+                print(upstream_nodes, downstream_node)
                 upstream_nodes, opt = self.balance_load(upstream_nodes, [downstream_node], opt=opt)
                 new_cluster_heads.update(upstream_nodes)
                 upstream_nodes = list(upstream_nodes)

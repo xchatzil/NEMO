@@ -1,12 +1,13 @@
 import pandas as pd
 import numpy as np
+from scipy.spatial import cKDTree
 from sklearn.datasets import make_blobs
 import util
 from scipy.stats import lognorm
 import sys
 from sklearn.cluster import KMeans
-from util import get_max_by_thresh
 from sklearn.metrics import silhouette_score
+import random
 
 path_FIT = "datasets/FIT/coords/FIT0_calc_coords.csv"
 path_RIPE_ATLAS = "datasets/RIPEAtlas/19062023/RIPEAtlas_coords.csv"
@@ -98,7 +99,20 @@ def get_coords_dict():
     return out
 
 
-def add_cluster_labels(df, opt_k=None, kmin=2, kmax=30, kseed=20):
+def add_knn_labels(df, no_cluster):
+    ch_indices = random.sample(range(1, df.shape[0]), no_cluster)
+    ch_coords = np.array(df.iloc[ch_indices][['x', 'y']].apply(tuple, axis=1))
+
+    # Build the k-d tree for the centroids
+    kdtree = cKDTree(np.vstack(ch_coords))
+    # Query the k-d tree to find the closest centroid for each node
+    closest_centroids_indices = kdtree.query(df[["x", "y"]].to_numpy(), k=1)[1]
+    df["cluster"] = closest_centroids_indices
+    df.loc[0, "cluster"] = -1
+    return df
+
+
+def add_kmeans_labels(df, opt_k=None, kmin=2, kmax=30, kseed=20):
     coords = df[["x", "y"]]
     sil = []
 
@@ -158,7 +172,7 @@ def create_topologies_from_dict(topology_dict, H, max_resources, c_capacity=50, 
                                                               weights=weights, dist=dist)
         out[k] = df, c_coords, base_col, slot_columns
         if with_clustering:
-            df, centroids, opt_k, sil = add_cluster_labels(df, kmin=kmin, kmax=kmax, kseed=kseed)
+            df, centroids, opt_k, sil = add_kmeans_labels(df, kmin=kmin, kmax=kmax, kseed=kseed)
             out[k] = df, c_coords, base_col, slot_columns, centroids, opt_k, sil
 
     print("Done")
