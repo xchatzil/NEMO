@@ -118,8 +118,7 @@ class NemoSolver:
             raise RuntimeError("NEMO not run. Use nemo_full first.")
 
         resource_limit = False
-        tree_reopt = False
-        full_reopt = False
+        tree_reopt_level = np.nan
 
         new_cluster_heads = set()
         if old_node in self.knn_nodes:
@@ -149,7 +148,7 @@ class NemoSolver:
                         level = level - 1
                         if level <= 0:
                             print("Leaf nodes affected, please rerun full NEMO")
-                            return set(), resource_limit, False, True
+                            return set(), resource_limit, 0
 
                         # no convergence, recaclulate from this level up to top
                         # print("Converged with", new_parents, "->", downstream_node, ", recalculating from level", level)
@@ -160,6 +159,9 @@ class NemoSolver:
                         self.opt_dict_levels.update(opt_dict_levels)
                         new_chs = self.df_nemo[self.df_nemo["level"] >= level].index.to_list()
                         new_cluster_heads.update(new_chs)
+
+                        if tree_reopt_level is np.nan:
+                            tree_reopt_level = level
                         break
 
                     if opt is None:
@@ -170,7 +172,7 @@ class NemoSolver:
                     upstream_nodes = list(new_parents)
                     level += 1
 
-        return new_cluster_heads, resource_limit, tree_reopt, full_reopt
+        return new_cluster_heads, resource_limit, tree_reopt_level
 
     def merge_clusters_kmeans(self, cluster_heads, current_num_clusters, merge_factor):
         idxs = list(set(cluster_heads))
