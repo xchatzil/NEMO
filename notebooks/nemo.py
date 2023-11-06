@@ -12,7 +12,7 @@ class NemoSolver:
     def __init__(self, df_coords, capacity_col, weight_col, step_size=0.5, merge_factor=0.5, max_levels=20):
         self.df_nemo = df_coords.copy()
         self.coords = self.df_nemo[["x", "y"]].to_numpy()
-        self.req_col = weight_col
+        self.weight_col = weight_col
         self.step_size = step_size
         self.merge_factor = merge_factor
 
@@ -23,6 +23,7 @@ class NemoSolver:
         # levels
         self.max_levels = max_levels
         self.df_nemo["level"] = 0
+        self.opt_dict_levels = dict()
 
         # labels
         self.parent_col = "parent"
@@ -45,42 +46,54 @@ class NemoSolver:
         # cluster head id
         self.df_nemo[self.parent_col] = [[]] * len(self.coords)
 
-    def nemo(self):
-        current_cluster_heads = dict()
-        opt_dict_iter = dict()
-        level = 0
-        downstream_node = 0
+        self.terminated = False
 
+    def nemo_full(self):
+        if self.terminated:
+            raise RuntimeError("NEMO already terminated. Use re-optimize or re-instantiate NEMOSolver")
+
+        current_cluster_heads = dict()
+        sink = 0
+
+        # pre-processing
         for cluster in self.unique_clusters:
             upstream_nodes = self.df_nemo[self.df_nemo["cluster"] == cluster].index
             current_cluster_heads[cluster] = list(upstream_nodes)
 
+        self.opt_dict_levels, resource_limit = self.nemo_placement(current_cluster_heads, sink)
+        self.terminated = True
+
+        return self.expand_df(self.capacity_col), self.opt_dict_levels, resource_limit
+
+    def nemo_placement(self, upstream_nodes_dict, downstream_node, level=0):
         if self.df_nemo.at[0, self.av_col] == sys.maxsize:
             av = sys.maxsize
         else:
             av = self.df_nemo.loc[downstream_node, self.av_col].sum()
         resource_limit = False
+        opt_dict_levels = {}
 
         while True:
             opt_dict = {}
-            all_chs = [item for sublist in current_cluster_heads.values() for item in sublist]
+            all_chs = [item for sublist in upstream_nodes_dict.values() for item in sublist]
             self.df_nemo.loc[all_chs, "level"] = level
-            load = self.df_nemo.loc[all_chs, "weight"].sum()
+            load = self.df_nemo.loc[all_chs, self.weight_col].sum()
 
             if av >= load or level == self.max_levels or resource_limit:
                 # set parent of cluster heads to downstream node
-                for cluster in current_cluster_heads.keys():
-                    for child_idx in current_cluster_heads[cluster]:
-                        self.create_mapping(child_idx, downstream_node, self.df_nemo.loc[child_idx, self.req_col])
+                for cluster in upstream_nodes_dict.keys():
+                    for child_idx in upstream_nodes_dict[cluster]:
+                        self.create_mapping(child_idx, downstream_node, self.df_nemo.loc[child_idx, self.weight_col])
                 break
             else:
                 new_cluster_heads = {}
                 if level >= 1:
                     # print(current_cluster_heads)
-                    current_cluster_heads = self.merge_clusters_kmeans(current_cluster_heads, all_chs)
+                    current_num_clusters = len(upstream_nodes_dict.keys())
+                    upstream_nodes_dict = self.merge_clusters_kmeans(all_chs, current_num_clusters, self.merge_factor)
 
-                for cluster in current_cluster_heads.keys():
-                    upstream_nodes = list(current_cluster_heads[cluster])
+                for cluster in upstream_nodes_dict.keys():
+                    upstream_nodes = list(upstream_nodes_dict[cluster])
                     # idx_min = self.df_nemo.loc[upstream_nodes, "latency"].idxmin()
                     # opt = self.df_nemo.loc[idx_min, ["x", "y"]].to_numpy()
                     if len(upstream_nodes) > 1:
@@ -93,44 +106,74 @@ class NemoSolver:
                     if opt is None:
                         resource_limit = True
                         break
-                current_cluster_heads = new_cluster_heads
+                upstream_nodes_dict = new_cluster_heads
             level += 1
-            opt_dict_iter[level] = opt_dict
+            opt_dict_levels[level] = opt_dict
 
         # returns result df, and dict with the local optima without replication
-        return self.expand_df(self.capacity_col), opt_dict_iter, resource_limit
+        return opt_dict_levels, resource_limit
 
     def nemo_reoptimize(self, old_node, upstream_nodes, downstream_nodes, opt=None):
+        if not self.terminated:
+            raise RuntimeError("NEMO not run. Use nemo_full first.")
+
         resource_limit = False
         new_cluster_heads = set()
         if old_node in self.knn_nodes:
             self.knn_nodes.remove(old_node)
 
         for downstream_node in downstream_nodes:
-            av = 0
-            load = 1
+            if downstream_node in self.knn_nodes:
+                self.knn_nodes.remove(downstream_node)
 
-            while av < load and not resource_limit:
-                print("av", av, "load", load, "ch", new_cluster_heads)
-                print(upstream_nodes, downstream_node)
-                upstream_nodes, opt = self.balance_load(upstream_nodes, [downstream_node], opt=opt)
-                new_cluster_heads.update(upstream_nodes)
-                upstream_nodes = list(upstream_nodes)
+            level = self.df_nemo.loc[downstream_node, "level"] - 1
 
-                load = self.df_nemo.loc[upstream_nodes, "weight"].sum()
+            while True:
                 av = self.df_nemo.loc[downstream_node, self.av_col].sum()
+                load = self.df_nemo.loc[upstream_nodes, self.weight_col].sum()
 
-                if opt is None:
-                    resource_limit = True
+                if av >= load or resource_limit:
+                    for child_idx in upstream_nodes:
+                        self.create_mapping(child_idx, downstream_node, self.df_nemo.loc[child_idx, self.weight_col])
+                        new_cluster_heads.add(downstream_node)
+                    break
+                else:
+                    new_parents, opt = self.balance_load(upstream_nodes, [downstream_node], opt=opt)
 
-        return new_cluster_heads
+                    if set(new_parents) == set(upstream_nodes):
+                        # convergence was during the previous level
+                        level = level - 1
+                        if level <= 0:
+                            print("Leaf nodes affected, please rerun full NEMO")
+                            return set(), True
 
-    def merge_clusters_kmeans(self, cluster_head_dict, cluster_heads):
+                        # no convergence, recaclulate from this level up to top
+                        print("Converged with", new_parents, ", recalculating from level", level)
+                        all_chs = self.df_nemo[self.df_nemo["level"] == level].index.to_list()
+                        current_num_clusters = len(self.opt_dict_levels[level].keys())
+                        upstream_nodes_dict = self.merge_clusters_kmeans(all_chs, current_num_clusters, 1)
+                        opt_dict_levels, resource_limit = self.nemo_placement(upstream_nodes_dict, 0, level=level)
+                        self.opt_dict_levels.update(opt_dict_levels)
+                        new_chs = self.df_nemo[self.df_nemo["level"] >= level].index.to_list()
+                        new_cluster_heads.update(new_chs)
+                        break
+
+                    if opt is None:
+                        resource_limit = True
+
+                    new_cluster_heads.update(new_parents)
+                    self.df_nemo.loc[list(new_parents), "level"] = level
+                    upstream_nodes = list(new_parents)
+                    level += 1
+
+        return new_cluster_heads, resource_limit
+
+    def merge_clusters_kmeans(self, cluster_heads, current_num_clusters, merge_factor):
         idxs = list(set(cluster_heads))
         coords = self.df_nemo.loc[idxs, ["x", "y"]]
         out = {}
-        num_clusters = min(len(cluster_head_dict.keys()), len(idxs))
-        num_clusters = max(int(self.merge_factor * num_clusters), 1)
+        num_clusters = min(current_num_clusters, len(idxs))
+        num_clusters = max(int(merge_factor * num_clusters), 1)
 
         cluster_alg = KMeans(n_clusters=num_clusters, n_init='auto', random_state=42).fit(coords)
         labels = cluster_alg.labels_
@@ -164,7 +207,7 @@ class NemoSolver:
         idx_order = full_kdtree.query([opt[0], opt[1]], k=len(self.knn_nodes))[1]
         idx_order = df_knn['oindex'].iloc[idx_order].tolist()
 
-        req = self.df_nemo.loc[upstream_nodes, self.req_col].sum()
+        req = self.df_nemo.loc[upstream_nodes, self.weight_col].sum()
         if self.df_nemo.at[0, self.av_col] == sys.maxsize:
             sum_avs = sys.maxsize
         else:
@@ -208,7 +251,7 @@ class NemoSolver:
                 split = True
             else:
                 child_idx = from_idxs[0]
-                required = self.df_nemo.loc[child_idx, self.req_col]
+                required = self.df_nemo.loc[child_idx, self.weight_col]
                 split = False
 
             if av_resources >= required:
@@ -250,7 +293,8 @@ class NemoSolver:
                 # Create a new row with 'type', 'tuple_element_1', 'tuple_element_2', and 'prev_index' columns
                 new_row = {'oindex': row['oindex'], 'x': row['x'], 'y': row['y'], 'type': row['type'],
                            'cluster': row['cluster'],
-                           'total_weight': row['weight'], 'used_weight': item[1], 'total_capacity': row[slot_col],
+                           'total_weight': row[self.weight_col], 'used_weight': item[1],
+                           'total_capacity': row[slot_col],
                            'free_capacity': row[self.av_col], 'level': row['level'], 'parent': item[0]}
                 rows.append(new_row)
 
@@ -275,7 +319,7 @@ def evaluate_nemo(prim_df, capacity_cols, weight_col, max_levels=20, step_size=0
               + ", step_size=" + str(step_size) + ", merge_factor=" + str(merge_factor))
         nemo = NemoSolver(prim_df, capacity_col, weight_col, max_levels=max_levels, step_size=step_size,
                           merge_factor=merge_factor)
-        df_dict[capacity_col], opt_dict[capacity_col], limits_dict[capacity_col] = nemo.nemo()
+        df_dict[capacity_col], opt_dict[capacity_col], limits_dict[capacity_col] = nemo.nemo_full()
         if with_eval:
             print("Evaluating for", capacity_col)
             coords = prim_df[["x", "y"]].to_numpy()
