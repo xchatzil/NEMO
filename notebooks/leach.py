@@ -25,6 +25,7 @@ class LeachSolver:
         self.df_leach["parent"] = 0
         # distance
         self.df_leach["distance"] = 0
+        self.df_leach["distance"] = self.df_leach["distance"].astype(float)
 
         # threshold value
         ch_indices = random.sample(range(1, self.device_number), self.clusters)
