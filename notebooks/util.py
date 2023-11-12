@@ -116,7 +116,7 @@ def find_path_to_root(df, coords, child_idx, root_idx=0):
         path.append(index)
         parent_index = row['parent'].values[0]
         # print(index, parent_index)
-        latency += np.linalg.norm(row[["x", "y"]].to_numpy() - coords[parent_index])
+        latency += np.linalg.norm(coords[index] - coords[parent_index])
         if parent_index != root_idx:
             trace_path(parent_index)
         else:
@@ -131,7 +131,11 @@ def evaluate(df, coords):
     latencies = np.zeros(device_number)
     lookup = {0: 0}
 
-    for i in range(1, device_number):
+    for i in range(0, device_number):
+        # if row has no parent it is sink
+        if pd.isna(df.loc[i, "parent"]):
+            continue
+
         idx = df.loc[i, "oindex"]
         if idx in lookup:
             latency = lookup[idx]

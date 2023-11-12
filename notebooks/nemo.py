@@ -299,16 +299,26 @@ class NemoSolver:
     def expand_df(self, slot_col):
         rows = []
         max_level = self.df_nemo['level'].max()
+
         # Iterate over rows in the DataFrame
         for idx, row in self.df_nemo.iterrows():
-            for item in row['parent']:
-                # Create a new row with 'type', 'tuple_element_1', 'tuple_element_2', and 'prev_index' columns
+            if not row["parent"]:
+                # handle the sinks
                 new_row = {'oindex': row['oindex'], 'x': row['x'], 'y': row['y'], 'type': row['type'],
                            'cluster': row['cluster'],
-                           'total_weight': row[self.weight_col], 'used_weight': item[1],
+                           'total_weight': pd.NA, 'used_weight': pd.NA,
                            'total_capacity': row[slot_col],
-                           'free_capacity': row[self.av_col], 'level': row['level'], 'parent': item[0]}
+                           'free_capacity': row[self.av_col], 'level': row['level'], 'parent': pd.NA}
                 rows.append(new_row)
+            else:
+                for item in row['parent']:
+                    # Create a new row with 'type', 'tuple_element_1', 'tuple_element_2', and 'prev_index' columns
+                    new_row = {'oindex': row['oindex'], 'x': row['x'], 'y': row['y'], 'type': row['type'],
+                               'cluster': row['cluster'],
+                               'total_weight': row[self.weight_col], 'used_weight': item[1],
+                               'total_capacity': row[slot_col],
+                               'free_capacity': row[self.av_col], 'level': row['level'], 'parent': item[0]}
+                    rows.append(new_row)
 
         # Create a new DataFrame from the list of rows
         out = pd.DataFrame(rows)

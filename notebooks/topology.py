@@ -74,18 +74,29 @@ def coords_PLANETLAB(path=path_PLANETLAB):
     return df_plb[["x", "y"]]
 
 
-def coords_sim(size, centers=40, x_dim_range=(0, 100), y_dim_range=(-50, 50), seed=4):
-    np.random.seed(seed)
+def coords_sim(size, centers=40, x_dim_range=(0, 100), y_dim_range=(-50, 50), with_latency=False, seed=None):
+    if seed:
+        np.random.seed(seed)
+
     device_number = size + 1  # first node is the coordinator
 
     # blobs with varied variances
     stds = np.random.uniform(low=0.5, high=5.3, size=(centers,))
-    coords, y = make_blobs(n_samples=device_number, centers=centers, n_features=2, shuffle=True,
-                           cluster_std=stds,
-                           center_box=((x_dim_range[0], y_dim_range[0]), (x_dim_range[1], y_dim_range[1])),
-                           random_state=31)
+    if seed:
+        coords, y = make_blobs(n_samples=device_number, centers=centers, n_features=2, shuffle=True,
+                               cluster_std=stds, random_state=seed,
+                               center_box=((x_dim_range[0], y_dim_range[0]), (x_dim_range[1], y_dim_range[1])))
+    else:
+        coords, y = make_blobs(n_samples=device_number, centers=centers, n_features=2, shuffle=True,
+                               cluster_std=stds,
+                               center_box=((x_dim_range[0], y_dim_range[0]), (x_dim_range[1], y_dim_range[1])))
 
     df = pd.DataFrame(coords, columns=["x", "y"])
+    if with_latency:
+        c_coords = df.iloc[0].to_numpy()
+        df['latency'] = list(zip(df.x, df.y))
+        df['latency'] = df['latency'].apply(lambda x: np.linalg.norm(x - c_coords))
+
     return df
 
 
