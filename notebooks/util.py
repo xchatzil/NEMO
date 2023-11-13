@@ -228,6 +228,7 @@ def plot(ax, df_origin, df_plcmnt, colors, lval=0.2, symbol_size=100, scale_fac=
     handles = [coordinator_label, worker_label, ch_label]
     clusters = df_origin["cluster"].unique()
     levels = df_plcmnt.loc[0, "level"]
+    df_plcmnt = df_plcmnt.dropna()
 
     for cluster in clusters:
         # plot points
@@ -239,7 +240,7 @@ def plot(ax, df_origin, df_plcmnt, colors, lval=0.2, symbol_size=100, scale_fac=
         parents = df_cluster["parent"].unique()
         if plot_centroids:
             point1 = df_cluster[["x", "y"]].mean()
-            ax.scatter(point1["x"], point1["y"], s=symbol_size, color=colors[cluster], zorder=10, label="centroid")
+            ax.scatter(point1["x"], point1["y"], s=symbol_size, color=colors[cluster], zorder=4, label="centroid")
 
             for parent in parents:
                 if parent != 0:
@@ -260,10 +261,10 @@ def plot(ax, df_origin, df_plcmnt, colors, lval=0.2, symbol_size=100, scale_fac=
             level = df_plcmnt[df_plcmnt["oindex"] == parent]["level"].max()
             if highlight_color is not None and level == levels - 1:
                 color = highlight_color
-                zorder = 11
+                zorder = 5
             else:
                 color = colors[cluster]
-                zorder = 10
+                zorder = 4
             ax.scatter(point1["x"], point1["y"], s=symbol_size, color=color, zorder=zorder, marker=ch_marker,
                        label="agg. point")
 
@@ -272,10 +273,10 @@ def plot(ax, df_origin, df_plcmnt, colors, lval=0.2, symbol_size=100, scale_fac=
             point2 = df_origin.iloc[parent_parents][["x", "y"]]
             if highlight_color is not None and level == levels - 2:
                 color = highlight_color
-                zorder = 11
+                zorder = 4
             else:
                 color = colors[cluster]
-                zorder = 10
+                zorder = 5
 
             ax.scatter(point2["x"], point2["y"], s=symbol_size, color=color, zorder=zorder, marker=ch_marker,
                        label="agg. point")
@@ -296,7 +297,7 @@ def plot(ax, df_origin, df_plcmnt, colors, lval=0.2, symbol_size=100, scale_fac=
             else:
                 color = colors[cl_label]
 
-            ax.scatter(opt_coords[0], opt_coords[1], s=symbol_size, color=color, zorder=15, marker=lnode_marker,
+            ax.scatter(opt_coords[0], opt_coords[1], s=symbol_size, color=color, zorder=6, marker=lnode_marker,
                        label="agg. point")
 
     ax.scatter(df_origin.loc[0, "x"], df_origin.loc[0, "y"], s=2 * symbol_size, color=ccolor, marker=cmarker, zorder=20)
@@ -325,7 +326,7 @@ def plot_optimum(ax, df_origin, opt_dicts, colors, lval=0.2, symbol_size=100, sc
                    zorder=-1)
 
         point2 = opt_dicts[1][cluster]
-        ax.scatter(point2[0], point2[1], s=symbol_size, color=colors[cluster], zorder=10, marker=lnode_marker,
+        ax.scatter(point2[0], point2[1], s=symbol_size, color=colors[cluster], zorder=4, marker=lnode_marker,
                    label="agg. point")
 
         if plot_centroid:
@@ -335,7 +336,7 @@ def plot_optimum(ax, df_origin, opt_dicts, colors, lval=0.2, symbol_size=100, sc
                 ax.plot([point1[0], point2[0]], [point1[1], point2[1]], "--", zorder=3, color=colors[cluster])
                 ax.plot([point2[0], ccords[0]], [point2[1], ccords[1]], "--", zorder=3, color=colors[cluster])
 
-    ax.scatter(df_origin.loc[0, "x"], df_origin.loc[0, "y"], s=2 * symbol_size, color=ccolor, marker=cmarker, zorder=10)
+    ax.scatter(df_origin.loc[0, "x"], df_origin.loc[0, "y"], s=2 * symbol_size, color=ccolor, marker=cmarker, zorder=5)
 
     ax.set_xlabel('$network$ $coordinate_1$', fontsize=axis_label_size)
     ax.set_ylabel('$network$ $coordinate_2$', fontsize=axis_label_size)
@@ -366,7 +367,7 @@ def plot_topology(ax, df, colors=None, plot_voronoi=False, plot_centroid=False, 
 
         if plot_centroid:
             centroid = df_cluster[["x", "y"]].mean()
-            ax.scatter(centroid["x"], centroid["y"], s=symbol_size, color=centroid_color, zorder=10,
+            ax.scatter(centroid["x"], centroid["y"], s=symbol_size, color=centroid_color, zorder=3,
                        label="centroid")
 
     if plot_voronoi:
