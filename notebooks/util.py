@@ -104,7 +104,7 @@ def calc_opt(point1, point2, w=0.5, k=0.1, num_iterations=100):
 
 
 # Function to find the path to the root
-def find_path_to_root(df, coords, child_idx, root_idx=0):
+def find_path_to_root(df, child_idx, root_idx=0):
     path = []  # Initialize an empty list to store the path
 
     # Define a recursive function to trace the path
@@ -116,7 +116,7 @@ def find_path_to_root(df, coords, child_idx, root_idx=0):
         path.append(index)
         parent_index = row['parent'].values[0]
         # print(index, parent_index)
-        latency += np.linalg.norm(coords[index] - coords[parent_index])
+        latency += np.linalg.norm(df.loc[index, ["x", "y"]] - df.loc[parent_index, ["x", "y"]])
         if parent_index != root_idx:
             trace_path(parent_index)
         else:
@@ -126,12 +126,11 @@ def find_path_to_root(df, coords, child_idx, root_idx=0):
     return path, latency  # Reverse the path to go from root to target
 
 
-def evaluate(df, coords):
-    device_number = df.shape[0]
-    latencies = np.zeros(device_number)
+def evaluate(df):
+    latencies = dict()
     lookup = {0: 0}
 
-    for i in range(0, device_number):
+    for i in df.index:
         # if row has no parent it is sink
         if pd.isna(df.loc[i, "parent"]):
             continue
@@ -140,7 +139,7 @@ def evaluate(df, coords):
         if idx in lookup:
             latency = lookup[idx]
         else:
-            path, latency = find_path_to_root(df, coords, idx, root_idx=0)
+            path, latency = find_path_to_root(df, idx, root_idx=0)
             lookup[idx] = latency
         latencies[i] = latency
 
