@@ -332,8 +332,7 @@ def evaluate_nemo(prim_df, capacity_cols, weight_col, max_levels=20, step_size=0
         df_dict[capacity_col], opt_dict[capacity_col], limits_dict[capacity_col] = nemo.nemo_full()
         if with_eval:
             print("Evaluating for", capacity_col)
-            coords = prim_df[["x", "y"]].to_numpy()
-            eval_matrix_slots[capacity_col] = evaluate(df_dict[capacity_col], coords)
+            eval_matrix_slots[capacity_col] = evaluate(df_dict[capacity_col])
 
     if with_eval:
         return eval_matrix_slots, df_dict, opt_dict, limits_dict

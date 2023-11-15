@@ -103,53 +103,39 @@ def calc_opt(point1, point2, w=0.5, k=0.1, num_iterations=100):
     return optimal_location
 
 
-# Function to find the path to the root
-def find_path_to_root(df, child_idx, root_idx=0):
-    path = []  # Initialize an empty list to store the path
+def evaluate(df_placement):
+    coords = df_placement.groupby("oindex")[["x", "y"]].first()
+    latency_dict = {}
 
-    # Define a recursive function to trace the path
-    latency = 0
+    df_sorted = df_placement.sort_values(by='level', ascending=False)
+    for level, level_df in df_sorted.groupby('level', sort=False):
+        for idx, row in level_df.iterrows():
+            self_idx = row["oindex"]
+            parent_idx = row["parent"]
 
-    def trace_path(index):
-        nonlocal latency
-        row = df[df['oindex'] == index]
-        path.append(index)
-        parent_index = row['parent'].values[0]
-        # print(index, parent_index)
-        latency += np.linalg.norm(df.loc[index, ["x", "y"]] - df.loc[parent_index, ["x", "y"]])
-        if parent_index != root_idx:
-            trace_path(parent_index)
-        else:
-            path.append(root_idx)
+            if pd.isna(parent_idx):
+                latency_dict[self_idx] = [0]
+                continue
 
-    trace_path(child_idx)  # Start tracing the path from the target_index
-    return path, latency  # Reverse the path to go from root to target
+            self_coords = coords.loc[self_idx, ["x", "y"]]
+            parent_coords = coords.loc[parent_idx, ["x", "y"]]
 
+            # latency is distance to parent + latency of parent
+            latency = np.linalg.norm(self_coords - parent_coords)
+            if parent_idx in latency_dict:
+                latency += np.mean(latency_dict[parent_idx])
 
-def evaluate(df):
-    latencies = dict()
-    lookup = {0: 0}
+            if self_idx in latency_dict:
+                latency_dict[self_idx] += [latency]
+            else:
+                latency_dict[self_idx] = [latency]
 
-    for i in df.index:
-        # if row has no parent it is sink
-        if pd.isna(df.loc[i, "parent"]):
-            continue
+    df_placement["load"] = df_placement["total_capacity"] - df_placement["free_capacity"]
+    load_dict = df_placement.groupby("oindex")["load"].mean().to_dict()
+    latency_dict = {key: np.mean(values) for key, values in latency_dict.items()}
 
-        idx = df.loc[i, "oindex"]
-        if idx in lookup:
-            latency = lookup[idx]
-        else:
-            path, latency = find_path_to_root(df, idx, root_idx=0)
-            lookup[idx] = latency
-        latencies[i] = latency
-
-    df["latency"] = latencies
-    df["load"] = df["total_capacity"] - df["free_capacity"]
-
-    group = df.groupby("oindex")[["latency", "load"]].mean()
-
-    statistics = {"latency_distribution": group["latency"].to_numpy(),
-                  "received_packets": group["load"].to_numpy()}
+    statistics = {"latency_distribution": latency_dict,
+                  "received_packets": load_dict}
     df_stats = pd.DataFrame(statistics)
     return df_stats
 
