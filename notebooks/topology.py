@@ -74,7 +74,8 @@ def coords_PLANETLAB(path=path_PLANETLAB):
     return df_plb[["x", "y"]]
 
 
-def coords_sim(size, centers=40, x_dim_range=(0, 100), y_dim_range=(-50, 50), with_latency=False, seed=None):
+def coords_sim(size, centers=40, x_dim_range=(0, 100), y_dim_range=(-50, 50), with_latency=False,
+               seed=None, c_coords=None):
     if seed:
         np.random.seed(seed)
 
@@ -93,7 +94,10 @@ def coords_sim(size, centers=40, x_dim_range=(0, 100), y_dim_range=(-50, 50), wi
 
     df = pd.DataFrame(coords, columns=["x", "y"])
     if with_latency:
-        c_coords = df.iloc[0].to_numpy()
+        if c_coords is None:
+            c_coords = df.iloc[0].to_numpy()
+        else:
+            df.loc[0, ["x", "y"]] = c_coords
         df['latency'] = list(zip(df.x, df.y))
         df['latency'] = df['latency'].apply(lambda x: np.linalg.norm(x - c_coords))
 

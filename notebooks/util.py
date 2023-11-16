@@ -38,6 +38,19 @@ def euclidean_distance(point1, point2):
     return math.sqrt((point1[0] - point2[0]) ** 2 + (point1[1] - point2[1]) ** 2)
 
 
+def update_coordinates(origin_df, new_coords_df):
+    # Update DataFrame based on values in another DataFrame
+    df = origin_df.merge(new_coords_df, left_on='oindex', right_index=True, suffixes=('_orig', '_update'), how='left')
+
+    # Choose values from the updated columns, fill NaN with the original values
+    df['x'] = df['x_update'].fillna(df['x_orig'])
+    df['y'] = df['y_update'].fillna(df['y_orig'])
+
+    # Drop the intermediate columns
+    df = df.drop(columns=['x_orig', 'y_orig', 'x_update', 'y_update'])
+    return df
+
+
 def create_groups(coordinates, n):
     """
     Create groups of n closest points such that no index is alone in a group.
