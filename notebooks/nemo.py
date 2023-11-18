@@ -79,6 +79,7 @@ class NemoSolver:
             av = self.df_nemo.at[downstream_node, self.av_col]
         resource_limit = False
         opt_dict_levels = {}
+        prev_length_ch = 0
 
         while True:
             opt_dict = {}
@@ -87,7 +88,7 @@ class NemoSolver:
             load = self.df_nemo.loc[all_chs, self.weight_col].sum()
             print("Level", level, "CH number: ", len(all_chs))
 
-            if av >= load or level == self.max_levels or resource_limit or len(all_chs) == 1:
+            if av >= load or level == self.max_levels or resource_limit or len(all_chs) == prev_length_ch:
                 if av < load:
                     resource_limit = True
 
@@ -103,6 +104,8 @@ class NemoSolver:
                 break
             else:
                 new_cluster_heads = {}
+                prev_length_ch = len(all_chs)
+
                 if level >= 1:
                     current_num_clusters = len(upstream_nodes_dict.keys())
                     upstream_nodes_dict = self.merge_clusters_kmeans(all_chs, current_num_clusters, self.merge_factor)

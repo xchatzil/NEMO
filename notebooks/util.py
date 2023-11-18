@@ -125,7 +125,7 @@ def calc_opt(point1, point2, w=0.5, k=0.1, num_iterations=100):
 def evaluate(df_placement):
     latency_dict = {}
 
-    coords = df_placement.groupby('oindex')[["x", "y"]].first().to_numpy()
+    coords = df_placement.groupby('oindex')[["x", "y"]].first()
     df_sorted = df_placement.sort_values(by='level', ascending=False)
 
     for level, level_df in df_sorted.groupby('level', sort=False):
@@ -138,7 +138,7 @@ def evaluate(df_placement):
                 continue
 
             self_coords = row[["x", "y"]].to_numpy()
-            parent_coords = coords[parent_idx]
+            parent_coords = coords.loc[parent_idx, ["x", "y"]].to_numpy()
 
             # latency is distance to parent + latency of parent
             latency = np.linalg.norm(self_coords - parent_coords)
