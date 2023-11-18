@@ -36,7 +36,7 @@ class NemoSolver:
 
         # assignments
         self.c_indices = self.df_nemo[self.df_nemo["type"] == "coordinator"].index.values
-        self.assignment_thresh = int(self.df_nemo[self.weight_col].median()) + 1
+        self.assignment_thresh = 0  # int(self.df_nemo[self.weight_col].median()) + 1
 
         # clusters
         self.centroids = self.df_nemo[self.df_nemo['cluster'] >= 0].groupby('cluster')[['x', 'y']].mean()
@@ -92,9 +92,14 @@ class NemoSolver:
                     resource_limit = True
 
                 # set parent of cluster heads to downstream node
+                self.remove_parents(all_chs)
                 for cluster in upstream_nodes_dict.keys():
                     for child_idx in upstream_nodes_dict[cluster]:
                         self.add_parent(child_idx, downstream_node, self.df_nemo.loc[child_idx, self.weight_col])
+
+                        unbalanced_load = self.df_nemo.at[child_idx, self.unbalanced_col]
+                        if unbalanced_load < 0:
+                            print("final assignment ------------------Load reached", child_idx, unbalanced_load)
                 break
             else:
                 new_cluster_heads = {}
@@ -320,6 +325,11 @@ class NemoSolver:
                 unbalanced_load = av_resources
 
             self.add_parent(child_idx, parent_idx, unbalanced_load)
+
+            unbalanced_load = self.df_nemo.at[child_idx, self.unbalanced_col]
+            if unbalanced_load < 0:
+                print("------------------Load reached", child_idx, unbalanced_load)
+
             parents.add(parent_idx)
 
         return parents, failed
@@ -338,6 +348,11 @@ class NemoSolver:
             self.df_nemo.at[node_id, self.parent_col] = []
             # assign new unbalanced load
             self.df_nemo.at[node_id, self.unbalanced_col] = unbalanced_load
+
+            unbalanced_load = self.df_nemo.at[node_id, self.unbalanced_col]
+            if unbalanced_load < 0:
+                print("------------------Load reached", node_id, unbalanced_load)
+
         return self.df_nemo
 
     def remove_parent(self, node_id, parent_id):
@@ -357,10 +372,15 @@ class NemoSolver:
         self.df_nemo.at[node_id, self.parent_col] = new_parents
         # assign new unbalanced load
         self.df_nemo.at[node_id, self.unbalanced_col] = unbalanced_load
+
+        unbalanced_load = self.df_nemo.at[node_id, self.unbalanced_col]
+        if unbalanced_load < 0:
+            print("------------------Load reached", node_id, unbalanced_load)
+
         return unbalanced_load, self.df_nemo
 
     def remove_parent_update_capacities(self, node_id, parent_id, used_weight):
-        print(node_id, parent_id, self.df_nemo.at[node_id, self.parent_col], self.children_dict[parent_id])
+        # print(node_id, parent_id, self.df_nemo.at[node_id, self.parent_col], self.children_dict[parent_id])
 
         self.df_nemo.at[parent_id, self.av_col] += used_weight
         if parent_id != 0:
@@ -390,7 +410,7 @@ class NemoSolver:
     def expand_df(self, slot_col):
         rows = []
         max_level = self.df_nemo['level'].max()
-        self.df_nemo.at[0, "level"] = max_level
+        self.df_nemo.at[0, "level"] = max_level + 1
 
         # Iterate over rows in the DataFrame
         for idx, row in self.df_nemo.iterrows():

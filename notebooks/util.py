@@ -23,7 +23,6 @@ log_opt_label = Line2D([], [], color=lcl, marker=lnode_marker, linestyle='None',
 def get_max_by_thresh(elements, threshold):
     max_k = np.argmax(elements)
     min_t = max(0, elements[max_k] - threshold)
-    print(min_t)
     for i in range(len(elements) - 1, -1, -1):
         if elements[i] >= min_t:
             return i
@@ -124,10 +123,11 @@ def calc_opt(point1, point2, w=0.5, k=0.1, num_iterations=100):
 
 
 def evaluate(df_placement):
-    coords = df_placement.groupby("oindex")[["x", "y"]].first()
     latency_dict = {}
 
+    coords = df_placement.groupby('oindex')[["x", "y"]].first().to_numpy()
     df_sorted = df_placement.sort_values(by='level', ascending=False)
+
     for level, level_df in df_sorted.groupby('level', sort=False):
         for idx, row in level_df.iterrows():
             self_idx = row["oindex"]
@@ -137,11 +137,12 @@ def evaluate(df_placement):
                 latency_dict[self_idx] = [0]
                 continue
 
-            self_coords = coords.loc[self_idx, ["x", "y"]]
-            parent_coords = coords.loc[parent_idx, ["x", "y"]]
+            self_coords = row[["x", "y"]].to_numpy()
+            parent_coords = coords[parent_idx]
 
             # latency is distance to parent + latency of parent
             latency = np.linalg.norm(self_coords - parent_coords)
+
             if parent_idx in latency_dict:
                 latency += np.mean(latency_dict[parent_idx])
 
