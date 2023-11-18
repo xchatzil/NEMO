@@ -51,6 +51,13 @@ def update_coordinates(origin_df, new_coords_df):
     return df
 
 
+def get_nested_parents(node_ids, df, parent_col="parent"):
+    parents = df.loc[node_ids, parent_col].to_list()
+    parents = [tup[0] for sublist in parents if sublist for tup in sublist]
+    parents = list(set(parents))
+    return parents
+
+
 def create_groups(coordinates, n):
     """
     Create groups of n closest points such that no index is alone in a group.
