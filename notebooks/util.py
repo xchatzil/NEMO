@@ -122,11 +122,34 @@ def calc_opt(point1, point2, w=0.5, k=0.1, num_iterations=100):
     return optimal_location
 
 
+def evaluate_node_rec(node_id, df_placement, coords):
+    node_df = df_placement[df_placement["oindex"] == node_id][["x", "y", "parent"]]
+    latencies = []
+
+    for idx, row in node_df.iterrows():
+        parent_idx = row["parent"]
+
+        if pd.isna(parent_idx):
+            return [0]
+        else:
+            parent_lats = evaluate_node_rec(parent_idx, df_placement, coords)
+            self_coords = row[["x", "y"]].to_numpy()
+            parent_coords = coords.loc[parent_idx, ["x", "y"]].to_numpy()
+
+            # latency is distance to parent + latency of parent
+            latency = np.linalg.norm(self_coords - parent_coords)
+            latency += np.mean(parent_lats)
+            latencies.append(latency)
+    return latencies
+
+
 def evaluate(df_placement):
     latency_dict = {}
 
     coords = df_placement.groupby('oindex')[["x", "y"]].first()
     df_sorted = df_placement.sort_values(by='level', ascending=False)
+
+    calculated_parents = set()
 
     for level, level_df in df_sorted.groupby('level', sort=False):
         for idx, row in level_df.iterrows():
@@ -136,6 +159,8 @@ def evaluate(df_placement):
             if pd.isna(parent_idx):
                 latency_dict[self_idx] = [0]
                 continue
+            if self_idx in calculated_parents:
+                continue
 
             self_coords = row[["x", "y"]].to_numpy()
             parent_coords = coords.loc[parent_idx, ["x", "y"]].to_numpy()
@@ -143,8 +168,12 @@ def evaluate(df_placement):
             # latency is distance to parent + latency of parent
             latency = np.linalg.norm(self_coords - parent_coords)
 
-            if parent_idx in latency_dict:
-                latency += np.mean(latency_dict[parent_idx])
+            if parent_idx not in latency_dict:
+                parent_lats = evaluate_node_rec(parent_idx, df_placement, coords)
+                latency_dict[parent_idx] = parent_lats
+                calculated_parents.add(parent_idx)
+
+            latency += np.mean(latency_dict[parent_idx])
 
             if self_idx in latency_dict:
                 latency_dict[self_idx] += [latency]

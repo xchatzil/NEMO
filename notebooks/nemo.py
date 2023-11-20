@@ -46,7 +46,8 @@ class NemoSolver:
 
         # knn search
         self.df_nemo["oindex"] = self.df_nemo.index
-        self.knn_nodes = set(range(1, len(self.df_nemo)))
+        self.knn_nodes = set(self.df_nemo.index)
+        self.knn_nodes.remove(0)
 
         # cluster head id
         self.df_nemo[self.parent_col] = [[]] * self.df_nemo.shape[0]
@@ -176,6 +177,7 @@ class NemoSolver:
             return self.expand_df(self.capacity_col), dict(), resource_limit, level
         else:
             # node is a cluster head, re-allocate the remaining load
+            print(f"Node with ID {node_id} is cluster head. Re-optimizing")
             upstream_nodes_dict = {0: upstream_nodes}
             self.opt_dict_levels, resource_limit = self.nemo_placement(upstream_nodes_dict, 0, level=level - 1)
             df_placement = self.expand_df(self.capacity_col)
@@ -203,16 +205,21 @@ class NemoSolver:
         node_row['type'] = 'worker'
         node_row[self.av_col] = node_row[self.capacity_col]
         node_row[self.unbalanced_col] = node_row[self.weight_col]
-        self.max_index += 1
         clusters = self.get_closest_clusters(node_coords, k=self.num_clusters)
         node_row['cluster'] = clusters[0]
         node_row['level'] = 0
         node_row['parent'] = []
 
         # add row to df_nemo and assign index
-        node_idx = self.max_index
+        self.max_index += 1
+        if node["oindex"]:
+            node_idx = node["oindex"]
+        else:
+            node_idx = self.max_index
+
         node_row['oindex'] = node_idx
         self.df_nemo.loc[node_idx] = node_row
+        print("Adding node with index", node_idx)
 
         # calc the parents
         cluster_nodes = self.df_nemo[self.df_nemo['cluster'] == clusters[0]].index
@@ -236,7 +243,7 @@ class NemoSolver:
             upstream_nodes_dict = reopt_clusters.groupby('cluster').groups
             print("reoptimizing clusters", upstream_nodes_dict.keys())
 
-            self.opt_dict_levels, resource_limit = self.nemo_placement(upstream_nodes_dict, 0, level=0)
+            self.opt_dict_levels, resource_limit = self.nemo_placement(upstream_nodes_dict, 0, level=1)
 
             placement_df = self.expand_df(self.capacity_col)
             return node_idx, placement_df, resource_limit
@@ -353,8 +360,7 @@ class NemoSolver:
             self.df_nemo.at[node_id, self.unbalanced_col] = unbalanced_load
 
             unbalanced_load = self.df_nemo.at[node_id, self.unbalanced_col]
-            if unbalanced_load < 0:
-                print("------------------Load reached", node_id, unbalanced_load)
+            assert unbalanced_load > 0, f"Negative load reached for node {node_id}: {unbalanced_load}"
 
         return self.df_nemo
 
@@ -377,8 +383,7 @@ class NemoSolver:
         self.df_nemo.at[node_id, self.unbalanced_col] = unbalanced_load
 
         unbalanced_load = self.df_nemo.at[node_id, self.unbalanced_col]
-        if unbalanced_load < 0:
-            print("------------------Load reached", node_id, unbalanced_load)
+        assert unbalanced_load > 0, f"Negative load reached for node {node_id}: {unbalanced_load}"
 
         return unbalanced_load, self.df_nemo
 
@@ -391,6 +396,7 @@ class NemoSolver:
 
         self.children_dict[parent_id].remove(node_id)
         if len(self.children_dict[parent_id]) == 0:
+            self.df_nemo.at[parent_id, "level"] = 0
             del self.children_dict[parent_id]
 
     def add_parent(self, child_idx, parent_idx, mapped_resources):
@@ -412,8 +418,9 @@ class NemoSolver:
 
     def expand_df(self, slot_col):
         rows = []
-        max_level = self.df_nemo['level'].max()
-        self.df_nemo.at[0, "level"] = max_level + 1
+        max_idx = self.df_nemo['level'].idxmax()
+        if max_idx > 0:
+            self.df_nemo.at[0, "level"] = self.df_nemo.at[max_idx, "level"] + 1
 
         # Iterate over rows in the DataFrame
         for idx, row in self.df_nemo.iterrows():
