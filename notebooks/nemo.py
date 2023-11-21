@@ -183,6 +183,48 @@ class NemoSolver:
             df_placement = self.expand_df(self.capacity_col)
             return df_placement, self.opt_dict_levels, resource_limit, level
 
+    def remove_nodes(self, node_ids, threshold=0):
+        resource_limit = False
+        self.assignment_thresh = threshold
+
+        if not self.placement:
+            raise RuntimeError("NEMO not run. Use nemo_full first.")
+
+        if not {*list(node_ids)} <= {*list(self.df_nemo.index)}:
+            raise ValueError("Nodes missing in index with IDs", node_ids)
+
+        level = self.df_nemo.loc[node_ids, "level"].min()
+
+        # identify all nodes that are leaf nodes and remove them
+        ch_nodes = []
+        affected_children = set()
+
+        for node_id in node_ids:
+            if node_id in self.children_dict:
+                ch_nodes.append(node_id)
+                children = self.children_dict[node_id]
+                # remove node from the "parent" column of its children
+                for child_idx in children:
+                    self.remove_parent(child_idx, node_id)
+                    affected_children.add(child_idx)
+
+            # release resources of parents
+            self.remove_parents([node_id])
+            # remove node from data structures
+            self.df_nemo = self.df_nemo.drop(node_id)
+            if node_id in self.knn_nodes:
+                self.knn_nodes.remove(node_id)
+
+        # handle cluster heads now
+        if len(affected_children) > 0:
+            # node is a cluster head, re-allocate the remaining load
+            print(f"Node with ID {ch_nodes} are cluster head. Re-optimizing children with level {level}")
+            upstream_nodes_dict = {0: list(affected_children)}
+            self.opt_dict_levels, resource_limit = self.nemo_placement(upstream_nodes_dict, 0, level=level)
+
+        df_placement = self.expand_df(self.capacity_col)
+        return df_placement, self.opt_dict_levels, resource_limit, level
+
     def add_node(self, node, cluster_neighbors=0, threshold=0, step_size=0, merge_factor=0):
         self.assignment_thresh = threshold
         if step_size > 0:
