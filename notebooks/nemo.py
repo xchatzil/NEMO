@@ -143,55 +143,20 @@ class NemoSolver:
         clusters = self.kd_tree_centroids.query(coords, k=k)[1]
         return clusters
 
-    def remove_node(self, node_id, threshold=0):
+    def remove_nodes(self, node_ids, threshold=0, step_size=0, merge_factor=0):
         resource_limit = False
-        self.assignment_thresh = threshold
-
         if not self.placement:
             raise RuntimeError("NEMO not run. Use nemo_full first.")
 
-        # get upstream nodes, downstream nodes, level and weights
-        if node_id not in self.df_nemo.index:
-            raise ValueError("Node does not exist with ID", node_id)
-
-        level = self.df_nemo.at[node_id, "level"]
-        if node_id in self.children_dict:
-            upstream_nodes = list(self.children_dict[node_id])
-        else:
-            upstream_nodes = []
-
-        # release resources of parents
-        self.remove_parents([node_id])
-
-        # remove node from the "parent" column of its children
-        for child_idx in upstream_nodes:
-            self.remove_parent(child_idx, node_id)
-
-        # remove node from data structures
-        self.df_nemo = self.df_nemo.drop(node_id)
-        if node_id in self.knn_nodes:
-            self.knn_nodes.remove(node_id)
-
-        if len(upstream_nodes) == 0:
-            # node is leaf node, nothing more to be done
-            return self.expand_df(self.capacity_col), dict(), resource_limit, level
-        else:
-            # node is a cluster head, re-allocate the remaining load
-            print(f"Node with ID {node_id} is cluster head. Re-optimizing")
-            upstream_nodes_dict = {0: upstream_nodes}
-            self.opt_dict_levels, resource_limit = self.nemo_placement(upstream_nodes_dict, 0, level=level - 1)
-            df_placement = self.expand_df(self.capacity_col)
-            return df_placement, self.opt_dict_levels, resource_limit, level
-
-    def remove_nodes(self, node_ids, threshold=0):
-        resource_limit = False
-        self.assignment_thresh = threshold
-
-        if not self.placement:
-            raise RuntimeError("NEMO not run. Use nemo_full first.")
-
-        if not {*list(node_ids)} <= {*list(self.df_nemo.index)}:
+        set_nodes = {*list(node_ids)}
+        if not set_nodes <= {*list(self.df_nemo.index)}:
             raise ValueError("Nodes missing in index with IDs", node_ids)
+
+        if step_size > 0:
+            self.step_size = step_size
+        if merge_factor > 0:
+            self.merge_factor = merge_factor
+        self.assignment_thresh = threshold
 
         level = self.df_nemo.loc[node_ids, "level"].min()
 
@@ -202,7 +167,7 @@ class NemoSolver:
         for node_id in node_ids:
             if node_id in self.children_dict:
                 ch_nodes.append(node_id)
-                children = self.children_dict[node_id]
+                children = self.children_dict[node_id].copy()
                 # remove node from the "parent" column of its children
                 for child_idx in children:
                     self.remove_parent(child_idx, node_id)
@@ -215,15 +180,75 @@ class NemoSolver:
             if node_id in self.knn_nodes:
                 self.knn_nodes.remove(node_id)
 
+        affected_children = list(affected_children.difference(set_nodes))
+        affected_children = self.df_nemo.loc[affected_children].groupby("cluster").groups
+
         # handle cluster heads now
         if len(affected_children) > 0:
             # node is a cluster head, re-allocate the remaining load
-            print(f"Node with ID {ch_nodes} are cluster head. Re-optimizing children with level {level}")
-            upstream_nodes_dict = {0: list(affected_children)}
-            self.opt_dict_levels, resource_limit = self.nemo_placement(upstream_nodes_dict, 0, level=level)
+            print(f"Node with ID {ch_nodes} are cluster head. Re-optimizing children with level {level}:",
+                  affected_children)
+            self.opt_dict_levels, resource_limit = self.nemo_placement(affected_children, 0, level=level)
 
         df_placement = self.expand_df(self.capacity_col)
         return df_placement, self.opt_dict_levels, resource_limit, level
+
+    def add_nodes_to_df(self, nodes):
+        # Columns to check for in the DataFrame
+        required_keys = ['x', 'y', 'weight', 'capacity']
+        ids = []
+
+        for node in nodes:
+            if not all(key in node for key in required_keys):
+                raise ValueError('Attributes are missing for node', node)
+
+            node_row = {'x': node['x'], 'y': node['y'], self.weight_col: node['weight'],
+                        self.capacity_col: node['capacity']}
+            node_coords = np.array([node['x'], node['y']])
+
+            # calc following attributes: ['latency', 'type', 'free_slots', 'oindex', 'cluster', 'level', 'parent']
+            node_row['latency'] = np.linalg.norm(node_coords - self.get_coords([0]))
+            node_row['type'] = 'worker'
+            node_row[self.av_col] = node_row[self.capacity_col]
+            node_row[self.unbalanced_col] = node_row[self.weight_col]
+            clusters = self.get_closest_clusters(node_coords, k=self.num_clusters)
+            node_row['cluster'] = clusters[0]
+            node_row['level'] = 0
+            node_row['parent'] = []
+
+            # add row to df_nemo and assign index
+            self.max_index += 1
+            if node["oindex"]:
+                node_idx = node["oindex"]
+            else:
+                node_idx = self.max_index
+
+            node_row['oindex'] = node_idx
+            self.df_nemo.loc[node_idx] = node_row
+            ids.append(node_idx)
+        return ids
+
+    def add_nodes(self, nodes, full_opt=False, threshold=0, step_size=0, merge_factor=0):
+        self.assignment_thresh = threshold
+        if step_size > 0:
+            self.step_size = step_size
+        if merge_factor > 0:
+            self.merge_factor = merge_factor
+
+        node_ids = self.add_nodes_to_df(nodes)
+
+        if not full_opt:
+            reopt_dict = self.df_nemo.loc[node_ids].groupby("cluster").groups
+        else:
+            clusters = self.df_nemo.loc[node_ids, "cluster"].unique()
+            affected_nodes = self.df_nemo[self.df_nemo['cluster'].isin(clusters)]
+            self.remove_parents(list(affected_nodes.index))
+            reopt_dict = affected_nodes.groupby("cluster").groups
+
+        print("re-optimizing clusters", reopt_dict.keys())
+        self.opt_dict_levels, resource_limit = self.nemo_placement(reopt_dict, 0, level=0)
+        placement_df = self.expand_df(self.capacity_col)
+        return placement_df, self.opt_dict_levels, resource_limit, 0
 
     def add_node(self, node, cluster_neighbors=0, threshold=0, step_size=0, merge_factor=0):
         self.assignment_thresh = threshold
