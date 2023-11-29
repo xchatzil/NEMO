@@ -102,6 +102,7 @@ class NemoSolver:
                         unbalanced_load = self.df_nemo.at[child_idx, self.unbalanced_col]
                         if unbalanced_load < 0:
                             print("final assignment ------------------Load reached", child_idx, unbalanced_load)
+                            resource_limit = True
                 break
             else:
                 new_cluster_heads = {}
@@ -148,7 +149,7 @@ class NemoSolver:
         if not self.placement:
             raise RuntimeError("NEMO not run. Use nemo_full first.")
 
-        set_nodes = {*list(node_ids)}
+        set_nodes = set(node_ids)
         if not set_nodes <= {*list(self.df_nemo.index)}:
             raise ValueError("Nodes missing in index with IDs", node_ids)
 
@@ -250,46 +251,20 @@ class NemoSolver:
         placement_df = self.expand_df(self.capacity_col)
         return placement_df, self.opt_dict_levels, resource_limit, 0
 
-    def add_node(self, node, cluster_neighbors=0, threshold=0, step_size=0, merge_factor=0):
+    def add_node(self, node, threshold=0, step_size=0, merge_factor=0):
         self.assignment_thresh = threshold
         if step_size > 0:
             self.step_size = step_size
         if merge_factor > 0:
             self.merge_factor = merge_factor
 
-        # Columns to check for in the DataFrame
-        required_keys = ['x', 'y', 'weight', 'capacity']
-
-        if not all(key in node for key in required_keys):
-            raise ValueError('Attributes are missing', required_keys)
-
-        node_row = {'x': node['x'], 'y': node['y'], self.weight_col: node['weight'],
-                    self.capacity_col: node['capacity']}
-        node_coords = np.array([node['x'], node['y']])
-
-        # calc following attributes: ['latency', 'type', 'free_slots', 'oindex', 'cluster', 'level', 'parent']
-        node_row['latency'] = np.linalg.norm(node_coords - self.get_coords([0]))
-        node_row['type'] = 'worker'
-        node_row[self.av_col] = node_row[self.capacity_col]
-        node_row[self.unbalanced_col] = node_row[self.weight_col]
-        clusters = self.get_closest_clusters(node_coords, k=self.num_clusters)
-        node_row['cluster'] = clusters[0]
-        node_row['level'] = 0
-        node_row['parent'] = []
-
-        # add row to df_nemo and assign index
-        self.max_index += 1
-        if node["oindex"]:
-            node_idx = node["oindex"]
-        else:
-            node_idx = self.max_index
-
-        node_row['oindex'] = node_idx
-        self.df_nemo.loc[node_idx] = node_row
+        node_idx = self.add_nodes_to_df([node])[0]
+        node_row = self.df_nemo.loc[node_idx]
+        cluster = node_row["cluster"]
         print("Adding node with index", node_idx)
 
         # calc the parents
-        cluster_nodes = self.df_nemo[self.df_nemo['cluster'] == clusters[0]].index
+        cluster_nodes = self.df_nemo[self.df_nemo['cluster'] == cluster].index
         parents = util.get_nested_parents(cluster_nodes, self.df_nemo, parent_col=self.parent_col)
 
         av_df = self.df_nemo.loc[parents, [self.av_col, 'latency']]
@@ -302,7 +277,7 @@ class NemoSolver:
             placement_df = self.expand_df(self.capacity_col)
             return node_idx, placement_df, limit
         else:
-            clusters_to_search = clusters[:cluster_neighbors + 1]
+            clusters_to_search = [cluster]
             print("balancing required for clusters", clusters_to_search)
             reopt_clusters = self.df_nemo[self.df_nemo['cluster'].isin(clusters_to_search)]
             # parents dont have enough resources, re-optimize the k-nearest clusters
