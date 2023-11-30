@@ -144,7 +144,7 @@ def add_kmeans_labels(df, opt_k=None, kmin=2, kmax=30, kseed=20):
         opt_k = kmin + opt_k
         print("Optimal k is", opt_k)
 
-    cluster_alg = KMeans(n_clusters=opt_k, n_init='auto').fit(coords)
+    cluster_alg = KMeans(n_clusters=opt_k, n_init='auto', random_state=kseed).fit(coords)
     labels = cluster_alg.labels_
     centroids = cluster_alg.cluster_centers_
 

@@ -36,7 +36,7 @@ class NemoSolver:
 
         # assignments
         self.c_indices = self.df_nemo[self.df_nemo["type"] == "coordinator"].index.values
-        self.assignment_thresh = 0  # int(self.df_nemo[self.weight_col].median()) + 1
+        self.assignment_thresh = 10  # int(self.df_nemo[self.weight_col].median()) + 1
 
         # clusters
         self.centroids = self.df_nemo[self.df_nemo['cluster'] >= 0].groupby('cluster')[['x', 'y']].mean()
@@ -144,6 +144,18 @@ class NemoSolver:
         clusters = self.kd_tree_centroids.query(coords, k=k)[1]
         return clusters
 
+    def update_coordinates(self, new_coords_df):
+        self.df_nemo["x"] = new_coords_df["x"]
+        self.df_nemo["y"] = new_coords_df["y"]
+        self.df_nemo["latency"] = new_coords_df["latency"]
+        self.df_nemo["cluster"] = new_coords_df["cluster"]
+
+        # clusters
+        self.centroids = self.df_nemo[self.df_nemo['cluster'] >= 0].groupby('cluster')[['x', 'y']].mean()
+        self.kd_tree_centroids = cKDTree(self.centroids[["x", "y"]].to_numpy())
+        self.unique_clusters = list(self.centroids.index)
+        self.num_clusters = len(self.unique_clusters)
+
     def remove_nodes(self, node_ids, threshold=0, step_size=0, merge_factor=0):
         resource_limit = False
         if not self.placement:
@@ -184,12 +196,17 @@ class NemoSolver:
         affected_children = list(affected_children.difference(set_nodes))
         affected_children = self.df_nemo.loc[affected_children].groupby("cluster").groups
 
+        # affected_clusters = self.df_nemo.loc[affected_children, "cluster"].unique()
+        # affected_children = self.df_nemo[self.df_nemo["cluster"].isin(affected_clusters)]
+        # self.remove_parents(list(affected_children.index))
+        # affected_children = affected_children.groupby("cluster").groups
+
         # handle cluster heads now
         if len(affected_children) > 0:
             # node is a cluster head, re-allocate the remaining load
             print(f"Node with ID {ch_nodes} are cluster head. Re-optimizing children with level {level}:",
                   affected_children)
-            self.opt_dict_levels, resource_limit = self.nemo_placement(affected_children, 0, level=level)
+            self.opt_dict_levels, resource_limit = self.nemo_placement(affected_children, 0, level=max(level - 1, 0))
 
         df_placement = self.expand_df(self.capacity_col)
         return df_placement, self.opt_dict_levels, resource_limit, level
@@ -229,7 +246,7 @@ class NemoSolver:
             ids.append(node_idx)
         return ids
 
-    def add_nodes(self, nodes, full_opt=False, threshold=0, step_size=0, merge_factor=0):
+    def add_nodes(self, nodes, full_opt=False, threshold=0, step_size=0, merge_factor=0, k_cluster_opt=1):
         self.assignment_thresh = threshold
         if step_size > 0:
             self.step_size = step_size
@@ -242,7 +259,16 @@ class NemoSolver:
             reopt_dict = self.df_nemo.loc[node_ids].groupby("cluster").groups
         else:
             clusters = self.df_nemo.loc[node_ids, "cluster"].unique()
-            affected_nodes = self.df_nemo[self.df_nemo['cluster'].isin(clusters)]
+
+            if k_cluster_opt <= 1:
+                knn_clusters = clusters
+            else:
+                knn_clusters = set()
+                for cl in clusters:
+                    n_clusters = self.get_closest_clusters(self.centroids.loc[cl].to_numpy(), k=k_cluster_opt)
+                    knn_clusters.update(n_clusters)
+
+            affected_nodes = self.df_nemo[self.df_nemo['cluster'].isin(knn_clusters)]
             self.remove_parents(list(affected_nodes.index))
             reopt_dict = affected_nodes.groupby("cluster").groups
 

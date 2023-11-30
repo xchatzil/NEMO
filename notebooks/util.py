@@ -5,6 +5,7 @@ from matplotlib.lines import Line2D
 from matplotlib.transforms import Bbox
 import math, heapq
 from scipy.spatial import cKDTree, voronoi_plot_2d, Voronoi
+from scipy.optimize import minimize
 
 lcl = "black"
 cmarker = "D"
@@ -34,7 +35,7 @@ def euclidean_distance(point1, point2):
     """
     Calculate the Euclidean distance between two points represented as tuples.
     """
-    return math.sqrt((point1[0] - point2[0]) ** 2 + (point1[1] - point2[1]) ** 2)
+    return np.linalg.norm(point1 - point2)
 
 
 def update_coordinates(origin_df, new_coords_df):
@@ -48,6 +49,37 @@ def update_coordinates(origin_df, new_coords_df):
     # Drop the intermediate columns
     df = df.drop(columns=['x_orig', 'y_orig', 'x_update', 'y_update'])
     return df
+
+
+def get_coords(existing_coords, target_distances):
+    def objective_function(coords, *args):
+        existing_coords, target_distances = args
+        errors = []
+        for i in range(len(existing_coords)):
+            current_distance = euclidean_distance(coords, existing_coords[i])
+            errors.append((current_distance - target_distances[i]) ** 2)
+        return sum(errors)
+
+    # Initial guess for the coordinates of the 6th node
+    initial_guess = np.zeros(2)
+
+    # Use optimization to find the coordinates of the node
+    result = minimize(objective_function, initial_guess, args=(existing_coords, target_distances), method='Powell')
+    # coordinates, error
+    return result.x, result.fun
+
+
+def fit_coords(node_id, coord_df, rtt_df, k_neigh):
+    n_coords = rtt_df.loc[node_id, ["x", "y"]]
+    df = rtt_df.drop(node_id)
+    df = df.sample(k_neigh)[["x", "y"]]
+    df['latency'] = list(zip(df.x, df.y))
+    df['latency'] = df['latency'].apply(lambda x: np.linalg.norm(x - n_coords))
+
+    existing_coords = coord_df.loc[df.index][["x", "y"]].to_numpy()
+    target_distances = df["latency"].to_numpy()
+    new_coords, error = get_coords(existing_coords, target_distances)
+    return new_coords, error
 
 
 def get_nested_parents(node_ids, df, parent_col="parent"):
