@@ -166,7 +166,7 @@ def setup_topology(df, H, max_resources, c_capacity=50, weights=(1, 1), dist="lo
     df["type"] = pd.Series(type_list, dtype="category")
 
     base_col = "base"
-    df[base_col] = sys.maxsize
+    df[base_col] = df.shape[0] * df.shape[0]
 
     if dist == "lognorm":
         df["weight"] = get_lognorm_samples(weights[0], weights[1], len(coords))
