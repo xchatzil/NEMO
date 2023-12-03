@@ -6,6 +6,7 @@ from matplotlib.transforms import Bbox
 import math, heapq
 from scipy.spatial import cKDTree, voronoi_plot_2d, Voronoi
 from scipy.optimize import minimize
+from sklearn.metrics import confusion_matrix
 
 lcl = "black"
 cmarker = "D"
@@ -29,6 +30,20 @@ def get_max_by_thresh(elements, threshold):
             return i
         i += i
     return max_k
+
+
+def calculate_purity(labels_true, labels_pred):
+    # Create a confusion matrix
+    cm = confusion_matrix(labels_true, labels_pred)
+
+    # Calculate purity
+    purity = 0
+    for i, cluster in enumerate(cm):
+        purity += cluster[i]
+
+    purity /= len(labels_true)
+
+    return cm, purity
 
 
 def euclidean_distance(point1, point2):
@@ -423,7 +438,7 @@ def plot_optimum(ax, df_origin, opt_dicts, colors, lval=0.2, symbol_size=100, sc
               bbox_to_anchor=(0, 1), prop={'size': leg_size})
 
 
-def plot_topology(ax, df, colors=None, plot_voronoi=False, plot_centroid=False, title="Topology", symbol_size=100,
+def plot_topology(ax, df, colors=None, plot_voronoi=False, plot_centroid=False, centroids=None, title="Topology", symbol_size=100,
                   lval=0.2, scale_fac=0.25, centroid_color="grey", point_color="grey", leg_size=12, axis_label_size=20):
     c_coords = df.loc[0, ["x", "y"]].tolist()
     clusters = df["cluster"][df["cluster"] >= 0].unique()
@@ -440,12 +455,16 @@ def plot_topology(ax, df, colors=None, plot_voronoi=False, plot_centroid=False, 
                        color=lighten_color(point_color, lval), zorder=-1)
 
         if plot_centroid:
-            centroid = df_cluster[["x", "y"]].mean()
+            if centroids is None:
+                centroid = df_cluster[["x", "y"]].mean()
+            else:
+                centroid = centroids[cluster]
             ax.scatter(centroid["x"], centroid["y"], s=symbol_size, color=centroid_color, zorder=3,
                        label="centroid")
 
     if plot_voronoi:
-        centroids = df[df["cluster"] >= 0].groupby("cluster")[["x", "y"]].mean().to_numpy()
+        if centroids is None:
+            centroids = df[df["cluster"] >= 0].groupby("cluster")[["x", "y"]].mean().to_numpy()
         vor = Voronoi(centroids)
         voronoi_plot_2d(vor, ax=ax, point_size=symbol_size, color="red", show_vertices=False, show_points=False)
 

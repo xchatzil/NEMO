@@ -16,7 +16,7 @@ class LeachSolver:
         if seed:
             random.seed(seed)
 
-    def leachClustering(self):
+    def leachClustering(self, df_rtt=None, rtt_clustering=False, rtt_eval=False):
         # cluster in which the node belongs to
         self.df_leach["cluster"] = -1
         # node role
@@ -27,8 +27,13 @@ class LeachSolver:
         self.df_leach["distance"] = 0
 
         # threshold value
-        ch_indices = random.sample(range(1, self.device_number), self.clusters)
-        ch_coords = np.array(self.df_leach.iloc[ch_indices][['x', 'y']].apply(tuple, axis=1))
+        if df_rtt is not None:
+            sample_idxs = list(df_rtt[df_rtt.loc[0] > 0].index)
+        else:
+            sample_idxs = range(1, self.device_number)
+
+        ch_indices = random.sample(sample_idxs, min(self.clusters, len(sample_idxs)))
+        ch_coords = np.array(self.df_leach.loc[ch_indices, ['x', 'y']].apply(tuple, axis=1))
 
         # Build the k-d tree for the centroids
         kdtree = cKDTree(np.vstack(ch_coords))
@@ -38,25 +43,44 @@ class LeachSolver:
         # assign the cluster heads
         cluster_head_cnt = 0
         for i in ch_indices:
-            distance = int(np.linalg.norm(ch_coords[cluster_head_cnt] - self.c_coords))
+            if rtt_clustering:
+                distance = df_rtt.loc[0, i]
+            else:
+                distance = int(np.linalg.norm(ch_coords[cluster_head_cnt] - self.c_coords))
+
             self.df_leach.loc[i, "role"] = 1
             self.df_leach.loc[i, "parent"] = -1
             self.df_leach.loc[i, "distance"] = distance
             self.df_leach.loc[i, "cluster"] = cluster_head_cnt
-            self.latency_hist[i] = distance
+
+            if rtt_eval:
+                self.latency_hist[i] = df_rtt.loc[0, i]
+            else:
+                self.latency_hist[i] = distance
+
             cluster_head_cnt = cluster_head_cnt + 1
 
         for i in range(1, self.device_number):
             if self.df_leach.loc[i, "cluster"] == -1:
-                ch_label = closest_centroids_indices[i]
+                if rtt_clustering:
+                    parent_idx = df_rtt.loc[i, ch_indices].idxmin()
+                    ch_label = ch_indices.index(parent_idx)
+                    dist = df_rtt.loc[i, parent_idx]
+                else:
+                    ch_label = closest_centroids_indices[i]
+                    parent_idx = ch_indices[ch_label]
+                    dist = int(np.linalg.norm(self.coords[i] - ch_coords[ch_label]))
+
                 self.df_leach.loc[i, "cluster"] = ch_label
-                dist = int(np.linalg.norm(self.coords[i] - ch_coords[ch_label]))
                 self.df_leach.loc[i, "distance"] = dist
 
-                parent_idx = ch_indices[ch_label]
                 self.df_leach.loc[i, "parent"] = parent_idx
-                self.latency_hist[i] = dist + np.linalg.norm(ch_coords[ch_label] - self.c_coords)
                 self.received_packets_hist[parent_idx] += 1
+                if rtt_eval:
+                    self.latency_hist[i] = df_rtt.loc[i, parent_idx] + df_rtt.loc[0, parent_idx]
+                else:
+                    dist = int(np.linalg.norm(self.coords[i] - ch_coords[ch_label]))
+                    self.latency_hist[i] = dist + np.linalg.norm(ch_coords[ch_label] - self.c_coords)
             else:
                 self.received_packets_hist[0] += 1
 
