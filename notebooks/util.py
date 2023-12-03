@@ -154,7 +154,7 @@ def calc_opt(point1, point2, w=0.5, k=0.1, num_iterations=100):
     return optimal_location
 
 
-def evaluate_node_rec(node_id, df_placement, coords):
+def evaluate_node_rec(node_id, df_placement, coords, df_rtt=None):
     node_df = df_placement[df_placement["oindex"] == node_id][["x", "y", "parent"]]
     latencies = []
 
@@ -165,17 +165,21 @@ def evaluate_node_rec(node_id, df_placement, coords):
             return [0]
         else:
             parent_lats = evaluate_node_rec(parent_idx, df_placement, coords)
-            self_coords = row[["x", "y"]].to_numpy()
-            parent_coords = coords.loc[parent_idx, ["x", "y"]].to_numpy()
 
             # latency is distance to parent + latency of parent
-            latency = np.linalg.norm(self_coords - parent_coords)
+            if df_rtt is not None:
+                latency = df_rtt.loc[idx, parent_idx]
+            else:
+                self_coords = row[["x", "y"]].to_numpy()
+                parent_coords = coords.loc[parent_idx, ["x", "y"]].to_numpy()
+                latency = np.linalg.norm(self_coords - parent_coords)
+
             latency += np.mean(parent_lats)
             latencies.append(latency)
     return latencies
 
 
-def evaluate(df_placement):
+def evaluate(df_placement, df_rtt=None):
     latency_dict = {}
 
     coords = df_placement.groupby('oindex')[["x", "y"]].first()
@@ -198,10 +202,13 @@ def evaluate(df_placement):
             parent_coords = coords.loc[parent_idx, ["x", "y"]].to_numpy()
 
             # latency is distance to parent + latency of parent
-            latency = np.linalg.norm(self_coords - parent_coords)
+            if df_rtt is not None:
+                latency = df_rtt.loc[self_idx, parent_idx]
+            else:
+                latency = np.linalg.norm(self_coords - parent_coords)
 
             if parent_idx not in latency_dict:
-                parent_lats = evaluate_node_rec(parent_idx, df_placement, coords)
+                parent_lats = evaluate_node_rec(parent_idx, df_placement, coords, df_rtt)
                 latency_dict[parent_idx] = parent_lats
                 calculated_parents.add(parent_idx)
 
