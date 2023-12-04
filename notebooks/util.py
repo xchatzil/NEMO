@@ -438,8 +438,9 @@ def plot_optimum(ax, df_origin, opt_dicts, colors, lval=0.2, symbol_size=100, sc
               bbox_to_anchor=(0, 1), prop={'size': leg_size})
 
 
-def plot_topology(ax, df, colors=None, plot_voronoi=False, plot_centroid=False, centroids=None, title="Topology", symbol_size=100,
-                  lval=0.2, scale_fac=0.25, centroid_color="grey", point_color="grey", leg_size=12, axis_label_size=20):
+def plot_topology(ax, df, colors=None, plot_voronoi=False, plot_centroid=False, centroids=None, title="Topology",
+                  symbol_size=100, lval=0.2, scale_fac=0.25, centroid_color="grey", point_color="grey",
+                  leg_size=12, axis_label_size=20, show_legend=True, show_coordinator=True):
     c_coords = df.loc[0, ["x", "y"]].tolist()
     clusters = df["cluster"][df["cluster"] >= 0].unique()
 
@@ -468,14 +469,16 @@ def plot_topology(ax, df, colors=None, plot_voronoi=False, plot_centroid=False, 
         vor = Voronoi(centroids)
         voronoi_plot_2d(vor, ax=ax, point_size=symbol_size, color="red", show_vertices=False, show_points=False)
 
-    ax.scatter(c_coords[0], c_coords[1], s=2 * symbol_size, marker=cmarker, color='black')
+    if show_coordinator:
+        ax.scatter(c_coords[0], c_coords[1], s=2 * symbol_size, marker=cmarker, color='black')
 
     if plot_centroid:
         handles = [coordinator_label, worker_label, centroid_label]
     else:
         handles = [coordinator_label, worker_label]
 
-    ax.legend(handles=handles, loc="upper left", bbox_to_anchor=(0, 1), fontsize=leg_size)
+    if show_legend:
+        ax.legend(handles=handles, loc="upper left", bbox_to_anchor=(0, 1), fontsize=leg_size)
     ax.set_xlabel('$network$ $coordinate_1$', fontsize=axis_label_size)
     ax.set_ylabel('$network$ $coordinate_2$', fontsize=axis_label_size)
     ax.set_title(title)
