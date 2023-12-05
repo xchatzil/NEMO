@@ -75,22 +75,16 @@ def coords_PLANETLAB(path=path_PLANETLAB):
 
 
 def coords_sim(size, centers=40, x_dim_range=(0, 100), y_dim_range=(-50, 50), with_latency=False,
-               seed=None, c_coords=None):
-    if seed:
-        np.random.seed(seed)
-
+               seed=4, c_coords=None):
+    np.random.seed(seed)
     device_number = size + 1  # first node is the coordinator
 
     # blobs with varied variances
     stds = np.random.uniform(low=0.5, high=5.3, size=(centers,))
-    if seed:
-        coords, y = make_blobs(n_samples=device_number, centers=centers, n_features=2, shuffle=True,
-                               cluster_std=stds, random_state=seed,
-                               center_box=((x_dim_range[0], y_dim_range[0]), (x_dim_range[1], y_dim_range[1])))
-    else:
-        coords, y = make_blobs(n_samples=device_number, centers=centers, n_features=2, shuffle=True,
-                               cluster_std=stds,
-                               center_box=((x_dim_range[0], y_dim_range[0]), (x_dim_range[1], y_dim_range[1])))
+    coords, y = make_blobs(n_samples=device_number, centers=centers, n_features=2, shuffle=True,
+                           cluster_std=stds,
+                           center_box=((x_dim_range[0], y_dim_range[0]), (x_dim_range[1], y_dim_range[1])),
+                           random_state=31)
 
     df = pd.DataFrame(coords, columns=["x", "y"])
     if with_latency:
@@ -176,6 +170,53 @@ def setup_topology(df, H, max_resources, c_capacity=50, weights=(1, 1), dist="lo
 
     df, slot_columns = add_capacity_columns(df, H, max_resources, c_capacity, len(coords))
     return df, c_coords, base_col, slot_columns
+
+
+def setup_topology_old(H, max_resources, c_capacity=50, centers=40, x_dim_range=(0, 100), y_dim_range=(-50, 50),
+                       size=1000, seed=4):
+    np.random.seed(seed)
+    device_number = size + 1  # first node is the coordinator
+    types = ["coordinator", "worker"]
+    types_dist = [types[1]]
+
+    type_list = [types_dist[np.random.randint(0, len(types_dist))] for x in range(device_number - 1)]
+    type_list.insert(0, types[0])
+
+    # blobs with varied variances
+    stds = np.random.uniform(low=0.5, high=5.3, size=(centers,))
+    coords, y = make_blobs(n_samples=device_number, centers=centers, n_features=2, shuffle=True,
+                           cluster_std=stds,
+                           center_box=((x_dim_range[0], y_dim_range[0]), (x_dim_range[1], y_dim_range[1])),
+                           random_state=31)
+    c_coords = coords[0]
+
+    df = pd.DataFrame(coords, columns=["x", "y"])
+    df['latency'] = list(zip(df.x, df.y))
+    df['latency'] = df['latency'].apply(lambda x: np.linalg.norm(x - c_coords))
+    df["type"] = pd.Series(type_list, dtype="category")
+
+    sums = []
+    slot_columns = []
+    for i in range(len(H), 0, -1):
+        if (i % 10 == 0) or (i == 5) or (i == 1):
+            # probabilites
+            p = np.array(H[i - 1:len(H)])
+            p /= p.sum()  # normalize
+            pop = np.arange(i - 1, len(H))
+
+            slot_list = np.random.choice(pop, device_number - 1, p=p, replace=True)
+            slot_list = np.insert(slot_list, 0, 0)
+
+            col = "capacity_" + str(i)
+            df[col] = pd.Series(slot_list, dtype="int")
+            df["capacity_" + str(i)] = df[col] / df[col].sum() * max_resources
+
+            df[col] = np.ceil(df[col]).astype("int")
+            df.at[0, col] = c_capacity
+            sums.append((df[col].sum()))
+            slot_columns.append(col)
+
+    return df, coords, c_coords, slot_columns, sums
 
 
 def create_topologies_from_dict(topology_dict, H, max_resources, c_capacity=50, weights=(1, 1), dist="lognorm",

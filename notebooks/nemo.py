@@ -84,25 +84,26 @@ class NemoSolver:
 
         while True:
             opt_dict = {}
-            all_chs = [item for sublist in upstream_nodes_dict.values() for item in sublist]
+            all_chs = list(set(item for sublist in upstream_nodes_dict.values() for item in sublist))
+
+            if level > 0:
+                self.remove_parents(all_chs)
+
             self.df_nemo.loc[all_chs, "level"] = level
-            load = self.df_nemo.loc[all_chs, self.weight_col].sum()
-            print("Level", level, "CH number: ", len(all_chs))
+            # has to be weight_col to avoid any cycles in the graph
+            load = self.df_nemo.loc[all_chs, self.unbalanced_col].sum()
+            print("Level", level, "CH number: ", len(all_chs), "Load:", load)
 
             if av >= load or level == self.max_levels or resource_limit or len(all_chs) == prev_length_ch:
-                if av < load:
-                    resource_limit = True
-
                 # set parent of cluster heads to downstream node
-                self.remove_parents(all_chs)
-                for cluster in upstream_nodes_dict.keys():
-                    for child_idx in upstream_nodes_dict[cluster]:
-                        self.add_parent(child_idx, downstream_node, self.df_nemo.loc[child_idx, self.weight_col])
+                for node_idx in all_chs:
+                    n_load = self.df_nemo.loc[node_idx, self.unbalanced_col]
+                    self.add_parent(node_idx, downstream_node, n_load)
 
-                        unbalanced_load = self.df_nemo.at[child_idx, self.unbalanced_col]
-                        if unbalanced_load < 0:
-                            print("final assignment ------------------Load reached", child_idx, unbalanced_load)
-                            resource_limit = True
+                remaining_cap = self.df_nemo.loc[downstream_node, self.av_col]
+                if remaining_cap < 0:
+                    print("final assignment ------------------Load reached", downstream_node, remaining_cap)
+                    resource_limit = True
                 break
             else:
                 new_cluster_heads = {}
@@ -113,7 +114,7 @@ class NemoSolver:
                     upstream_nodes_dict = self.merge_clusters_kmeans(all_chs, current_num_clusters, self.merge_factor)
 
                 print("--------Balancing load for", len(upstream_nodes_dict.keys()), "clusters to", downstream_node)
-                cl_cnt = 0
+                cl_cnt = 1
                 for cluster in upstream_nodes_dict.keys():
                     if cl_cnt % 10 == 0:
                         print("Clusters processed:", cl_cnt)
@@ -122,7 +123,6 @@ class NemoSolver:
                     upstream_nodes = list(upstream_nodes_dict[cluster])
                     # idx_min = self.df_nemo.loc[upstream_nodes, "latency"].idxmin()
                     # opt = self.df_nemo.loc[idx_min, ["x", "y"]].to_numpy()
-                    self.remove_parents(upstream_nodes)
                     if len(upstream_nodes) > 1:
                         new_cluster_heads[cluster], opt = self.balance_load(upstream_nodes, [downstream_node], opt=None)
                     else:
@@ -317,7 +317,7 @@ class NemoSolver:
             return node_idx, placement_df, resource_limit
 
     def merge_clusters_kmeans(self, cluster_heads, current_num_clusters, merge_factor):
-        idxs = list(set(cluster_heads))
+        idxs = cluster_heads
         coords = self.get_coords(idxs)
         out = {}
         num_clusters = min(current_num_clusters, len(idxs))
