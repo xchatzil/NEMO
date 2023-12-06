@@ -9,7 +9,8 @@ from util import evaluate
 
 
 class NemoSolver:
-    def __init__(self, df, capacity_col, weight_col, step_size=0.5, merge_factor=0.5, max_levels=20):
+    def __init__(self, df, capacity_col, weight_col, step_size=0.5, merge_factor=0.5, max_levels=20,
+                 assignment_threshold="auto"):
         self.required_attributes = ['x', 'y', 'latency', 'type', weight_col, capacity_col, 'cluster']
 
         self.df_nemo = df[self.required_attributes].copy()
@@ -36,7 +37,10 @@ class NemoSolver:
 
         # assignments
         self.c_indices = self.df_nemo[self.df_nemo["type"] == "coordinator"].index.values
-        self.assignment_thresh = 10  # int(self.df_nemo[self.weight_col].median()) + 1
+        if assignment_threshold == "auto":
+            self.assignment_thresh = int(self.df_nemo[self.weight_col].median()) + 1
+        else:
+            self.assignment_thresh = assignment_threshold
 
         # clusters
         self.centroids = self.df_nemo[self.df_nemo['cluster'] >= 0].groupby('cluster')[['x', 'y']].mean()
@@ -116,7 +120,7 @@ class NemoSolver:
                 print("--------Balancing load for", len(upstream_nodes_dict.keys()), "clusters to", downstream_node)
                 cl_cnt = 1
                 for cluster in upstream_nodes_dict.keys():
-                    if cl_cnt % 10 == 0:
+                    if cl_cnt % 20 == 0:
                         print("Clusters processed:", cl_cnt)
                     cl_cnt += 1
 
@@ -156,14 +160,10 @@ class NemoSolver:
         self.unique_clusters = list(self.centroids.index)
         self.num_clusters = len(self.unique_clusters)
 
-    def remove_nodes(self, node_ids, threshold=0, step_size=0, merge_factor=0):
+    def remove_nodes(self, node_ids, return_df=True, threshold=0, step_size=0, merge_factor=0):
         resource_limit = False
         if not self.placement:
             raise RuntimeError("NEMO not run. Use nemo_full first.")
-
-        set_nodes = set(node_ids)
-        if not set_nodes <= {*list(self.df_nemo.index)}:
-            raise ValueError("Nodes missing in index with IDs", node_ids)
 
         if step_size > 0:
             self.step_size = step_size
@@ -178,6 +178,10 @@ class NemoSolver:
         affected_children = set()
 
         for node_id in node_ids:
+            if node_id not in self.df_nemo.index:
+                print("Node not in index", node_id)
+                continue
+
             if node_id in self.children_dict:
                 ch_nodes.append(node_id)
                 children = self.children_dict[node_id].copy()
@@ -193,7 +197,7 @@ class NemoSolver:
             if node_id in self.knn_nodes:
                 self.knn_nodes.remove(node_id)
 
-        affected_children = list(affected_children.difference(set_nodes))
+        affected_children = list(affected_children.difference(set(node_ids)))
         affected_children = self.df_nemo.loc[affected_children].groupby("cluster").groups
 
         # affected_clusters = self.df_nemo.loc[affected_children, "cluster"].unique()
@@ -208,8 +212,11 @@ class NemoSolver:
                   affected_children)
             self.opt_dict_levels, resource_limit = self.nemo_placement(affected_children, 0, level=max(level - 1, 0))
 
-        df_placement = self.expand_df(self.capacity_col)
-        return df_placement, self.opt_dict_levels, resource_limit, level
+        if return_df:
+            df_placement = self.expand_df(self.capacity_col)
+            return df_placement, self.opt_dict_levels, resource_limit, level
+        else:
+            return resource_limit, level
 
     def add_nodes_to_df(self, nodes):
         # Columns to check for in the DataFrame
@@ -236,7 +243,7 @@ class NemoSolver:
 
             # add row to df_nemo and assign index
             self.max_index += 1
-            if node["oindex"]:
+            if "oindex" in node:
                 node_idx = node["oindex"]
             else:
                 node_idx = self.max_index
@@ -246,7 +253,8 @@ class NemoSolver:
             ids.append(node_idx)
         return ids
 
-    def add_nodes(self, nodes, full_opt=False, threshold=0, step_size=0, merge_factor=0, k_cluster_opt=1):
+    def add_nodes(self, nodes, return_df=True, full_opt=False, threshold=0, step_size=0, merge_factor=0,
+                  k_cluster_opt=1):
         self.assignment_thresh = threshold
         if step_size > 0:
             self.step_size = step_size
@@ -274,8 +282,12 @@ class NemoSolver:
 
         print("re-optimizing clusters", reopt_dict.keys())
         self.opt_dict_levels, resource_limit = self.nemo_placement(reopt_dict, 0, level=0)
-        placement_df = self.expand_df(self.capacity_col)
-        return placement_df, self.opt_dict_levels, resource_limit, 0
+
+        if return_df:
+            placement_df = self.expand_df(self.capacity_col)
+            return placement_df, self.opt_dict_levels, resource_limit, 0
+        else:
+            return resource_limit, 0
 
     def add_node(self, node, threshold=0, step_size=0, merge_factor=0):
         self.assignment_thresh = threshold

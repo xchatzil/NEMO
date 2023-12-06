@@ -438,7 +438,7 @@ def plot_optimum(ax, df_origin, opt_dicts, colors, lval=0.2, symbol_size=100, sc
               bbox_to_anchor=(0, 1), prop={'size': leg_size})
 
 
-def plot_topology(ax, df, colors=None, plot_voronoi=False, plot_centroid=False, centroids=None, title="Topology",
+def plot_topology(ax, df, colors=None, plot_voronoi=False, plot_centroid=False, centroids=None, title=None,
                   symbol_size=100, lval=0.2, scale_fac=0.25, centroid_color="grey", point_color="grey",
                   leg_size=12, axis_label_size=20, show_legend=True, show_coordinator=True):
     c_coords = df.loc[0, ["x", "y"]].tolist()
@@ -481,7 +481,8 @@ def plot_topology(ax, df, colors=None, plot_voronoi=False, plot_centroid=False, 
         ax.legend(handles=handles, loc="upper left", bbox_to_anchor=(0, 1), fontsize=leg_size)
     ax.set_xlabel('$network$ $coordinate_1$', fontsize=axis_label_size)
     ax.set_ylabel('$network$ $coordinate_2$', fontsize=axis_label_size)
-    ax.set_title(title)
+    if title is not None:
+        ax.set_title(title)
     return ax
 
 
