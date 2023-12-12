@@ -11,6 +11,11 @@ import random
 
 path_FIT = "datasets/FIT/coords/FIT0_calc_coords.csv"
 path_RIPE_ATLAS = "datasets/RIPEAtlas/19062023/RIPEAtlas_coords.csv"
+path_RIPE_ATLAS_RTT = "datasets/RIPEAtlas/19062023/matrix_cleaned.csv"
+
+path_RIPE_ATLAS_filtered = "datasets/RIPEAtlas/19062023/time-0_2d.csv"
+path_RIPE_ATLAS_filtered_RTT = "datasets/RIPEAtlas/19062023/rtt_time-0.csv"
+
 path_KING = "datasets/vivaldi_king.txt"
 path_PLANETLAB = "datasets/planetlab.txt"
 
@@ -57,6 +62,10 @@ def add_capacity_columns(df, H, max_capacity, c_capacity, size):
 def coords_ripe_atlas(path=path_RIPE_ATLAS):
     df_atlas = pd.read_csv(path, sep=",", header=None, names=["x", "y"])
     return df_atlas
+
+
+def rtt_ripe_atlas(path=path_RIPE_ATLAS_RTT):
+    return pd.read_csv(path, sep=",", header=None, skiprows=1, dtype=int)
 
 
 def coords_fit(path=path_FIT):

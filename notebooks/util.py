@@ -41,6 +41,7 @@ def calculate_purity(labels_true, labels_pred):
     for i, cluster in enumerate(cm):
         purity += cluster[i]
 
+    print(f"Wrong labeled {len(labels_true) - purity}/{len(labels_true)}")
     purity /= len(labels_true)
 
     return cm, purity

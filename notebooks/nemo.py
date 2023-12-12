@@ -538,7 +538,8 @@ def calc_routes(df):
     return df
 
 
-def evaluate_nemo(prim_df, capacity_cols, weight_col, max_levels=20, step_size=0.5, merge_factor=0.5, with_eval=True):
+def evaluate_nemo(prim_df, capacity_cols, weight_col, max_levels=20, step_size=0.5, merge_factor=0.5, with_eval=True,
+                  df_rtt=None):
     df_dict = {}
     opt_dict = {}
     limits_dict = {}
@@ -552,7 +553,7 @@ def evaluate_nemo(prim_df, capacity_cols, weight_col, max_levels=20, step_size=0
         df_dict[capacity_col], opt_dict[capacity_col], limits_dict[capacity_col] = nemo.nemo_full()
         if with_eval:
             print("Evaluating for", capacity_col)
-            eval_matrix_slots[capacity_col] = evaluate(df_dict[capacity_col])
+            eval_matrix_slots[capacity_col] = evaluate(df_dict[capacity_col], df_rtt=df_rtt)
 
     if with_eval:
         return eval_matrix_slots, df_dict, opt_dict, limits_dict

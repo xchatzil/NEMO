@@ -94,11 +94,14 @@ class AnnealingSolver:
 
         return tourSwap
 
-    def solve_tsp(self, coordinates):
+    def solve_tsp(self, coordinates, df_rtt=None):
         tInitial, tFinal, alfa, nMarkov = self.initParameter()  #
 
         nCities = coordinates.shape[0]  # nCities
-        distMat = getDistMat(nCities, coordinates)  #
+        if df_rtt is not None:
+            distMat = df_rtt.values
+        else:
+            distMat = getDistMat(nCities, coordinates)  #
         nMarkov = nCities  # Markov
         tNow = tInitial  # (current temperature)
 

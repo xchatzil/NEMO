@@ -30,6 +30,8 @@ class LeachSolver:
         if df_rtt is not None:
             sample_idxs = list(df_rtt[df_rtt.loc[0] > 0].index)
         else:
+            rtt_eval = False
+            rtt_clustering = False
             sample_idxs = range(1, self.device_number)
 
         ch_indices = random.sample(sample_idxs, min(self.clusters, len(sample_idxs)))
