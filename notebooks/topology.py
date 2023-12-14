@@ -24,6 +24,7 @@ def get_lognorm_hist():
     mode = 1
     stddev = 50
     sigma, scale = util.lognorm_params(mode, stddev)
+    print("sigma:", sigma, "scale:", scale)
     sample = lognorm.rvs(sigma, 0, scale, size=10000).astype(int)
     H, bins = np.histogram(sample, bins=100, range=(0, 100), density=True)
     return H, bins
@@ -212,6 +213,7 @@ def setup_topology_old(H, max_resources, c_capacity=50, centers=40, x_dim_range=
             p = np.array(H[i - 1:len(H)])
             p /= p.sum()  # normalize
             pop = np.arange(i - 1, len(H))
+            # print("Probability:", p, "Pop:", pop)
 
             slot_list = np.random.choice(pop, device_number - 1, p=p, replace=True)
             slot_list = np.insert(slot_list, 0, 0)

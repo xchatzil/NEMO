@@ -27,9 +27,9 @@ class AnnealingSolver:
         # Initial parameter for simulated annealing algorithm
         tInitial = 10.0  # (initial temperature)
         tFinal = 0.01  # (stop temperature)
-        nMarkov = 1000  # Markov
+        nMarkov = 100  # Markov
         # increase alfa for more accuracy
-        alfa = 0.9  # T(k)=alfa*T(k-1)
+        alfa = 0.99  # T(k)=alfa*T(k-1)
 
         return tInitial, tFinal, alfa, nMarkov
 
