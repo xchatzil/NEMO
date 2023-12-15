@@ -1,6 +1,9 @@
 import numpy as np
 import random
+
+import pandas as pd
 from scipy.spatial import cKDTree
+import skfuzzy as fuzz
 
 
 class LeachSolver:
@@ -104,3 +107,43 @@ class LeachSolver:
         labels = self.df_leach["cluster"]
         labels = labels.tolist()
         return labels, ch_indices, self.latency_hist, self.received_packets_hist
+
+    def leachSFClustering(self, capacity_col, df_rtt=None, rtt_clustering=False, rtt_eval=False):
+        def dist_func(row, u, max_c):
+            dist = np.linalg.norm(row[["x", "y"]] - centers[row["cluster"], :])
+            dist += row["latency"]
+            dist = (1 - u[row["cluster"], row.name]) * dist
+            dist = dist * row[capacity_col] / max_c
+            return dist
+
+        max_c = self.df_leach[capacity_col].max()
+
+        # perform clustering
+        centers, u, u0, d, jm, p, fpc = fuzz.cluster.cmeans(self.df_leach[["x", "y"]].values.T, c=self.clusters, m=2,
+                                                            error=0.005, maxiter=1000, init=None)
+        self.df_leach["cluster"] = np.argmax(u, axis=0)
+        self.df_leach['distance'] = self.df_leach.apply(lambda row: dist_func(row, u, max_c), axis=1)
+
+        self.df_leach.loc[0, "cluster"] = -1
+        self.df_leach.loc[0, "distance"] = 0
+
+        # identify cluster head for each cluster
+        ch_indices = self.df_leach[self.df_leach["cluster"] >= 0].groupby("cluster")["distance"].idxmin().to_numpy()
+        self.df_leach['parent'] = self.df_leach.groupby('cluster')['distance'].transform('idxmin')
+        self.df_leach.loc[ch_indices, "parent"] = 0
+        self.df_leach.loc[0, "parent"] = np.nan
+
+        # cols for evaluation
+        self.df_leach["oindex"] = self.df_leach.index
+        self.df_leach["level"] = 0
+        self.df_leach.loc[ch_indices, "level"] = 1
+        self.df_leach.loc[0, "level"] = 2
+        self.df_leach["total_capacity"] = self.df_leach[capacity_col]
+
+        cl_sizes = self.df_leach[self.df_leach["cluster"] >= 0].groupby("cluster").size() + 1
+        self.df_leach["free_capacity"] = 0
+        self.df_leach.loc[ch_indices, "free_capacity"] = cl_sizes.to_numpy()
+        self.df_leach.loc[0, "free_capacity"] = cl_sizes.shape[0]
+        self.df_leach["free_capacity"] = self.df_leach["total_capacity"] - self.df_leach["free_capacity"]
+
+        return centers, u, self.df_leach, ch_indices
